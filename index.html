@@ -716,6 +716,35 @@ body.in-menu #touch-ui {
 }
 </style>
 
+<style id="menu-fix-css">
+/* Menu e editor de rosto adaptados ao celular (paisagem) */
+#btn-online-host .menu-btn-sub { white-space: normal; text-align: right; line-height: 1.1; max-width: 58%; }
+#net-code { box-sizing: border-box; }
+#face-panel { touch-action: pan-y; -webkit-overflow-scrolling: touch; box-sizing: border-box; }
+@media (max-width: 820px), (max-height: 560px) {
+  /* centralizar sem cortar o topo quando o conteúdo é maior que a tela */
+  #start-screen { align-items: flex-start; padding-top: calc(10px + env(safe-area-inset-top, 0px)); padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+  .start-hero { margin: auto; }
+}
+@media (max-height: 560px) {
+  .start-desc, .spotify-card { display: none; }
+  .start-tag { font-size: 11px; }
+  .start-title { font-size: 40px; line-height: 1; }
+  .start-hero { max-width: 560px; padding: 14px 16px; gap: 8px; }
+  .start-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .start-actions .menu-btn.primary { grid-column: 1 / -1; }
+  .start-actions .menu-btn { font-size: 16px; padding: 7px 10px; }
+  .start-actions .menu-btn-sub { font-size: 10px; }
+  #net-code { font-size: 15px; padding: 8px; }
+  #face-panel { top: calc(8px + env(safe-area-inset-top, 0px)) !important; bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important; left: calc(8px + env(safe-area-inset-left, 0px)) !important; width: min(300px, 50vw) !important; padding: 10px !important; }
+  #face-panel h3 { font-size: 20px !important; }
+  #face-panel h4 { margin: 10px 0 5px !important; }
+  #face-panel .chip { padding: 5px 8px !important; font-size: 11px !important; }
+  #face-panel .sw { width: 28px !important; height: 28px !important; }
+  #face-panel .done { margin-top: 10px !important; padding: 9px !important; font-size: 13px !important; }
+}
+</style>
+
 <style id="mobile-css">
 html, body { overscroll-behavior: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 body.mobile, body.mobile canvas { touch-action: none; }
