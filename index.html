@@ -837,6 +837,11 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
         <button class="menu-btn" style="flex:1;" onclick="netJoin()"><span>ENTRAR NA SALA</span></button>
       </div>
 
+      <button class="menu-btn" id="btn-face" onclick="openFaceEditor()">
+        <span>🧑 PERSONALIZAR ROSTO</span>
+        <span class="menu-btn-sub">CABELO • BARBA • COR DA PELE</span>
+      </button>
+
       <button class="menu-btn" id="btn-start-settings">
         <span>⚙️ CONFIGURAÇÕES</span>
         <span class="menu-btn-sub">CONTROLES & TELA</span>
@@ -1947,14 +1952,19 @@ function createRealisticStreetballPlayer(isAI) {
   head.add(box(0.040,0.003,0.012,mDark,0,0.066,0.1045));
   const cap=new THREE.Mesh(new THREE.SphereGeometry(1,24,14,0,Math.PI*2,0,Math.PI*0.5),mHair);
   cap.scale.set(0.102,0.13,0.117);cap.position.set(0,0.125,-0.004);cap.rotation.x=-0.5;head.add(cap);
-  if(isAI){
-    head.add(sphere(1,mHair,0.118,0.095,0.13,0,0.215,-0.025));head.add(sphere(1,mHair,0.05,0.034,0.05,0,0.03,0.058));
-    head.add(box(0.044,0.008,0.012,mHair,0,0.079,0.108));
-    for(const sg of[-1,1])head.add(box(0.012,0.075,0.05,mHair,sg*0.083,0.06,0.04));
-  }else{
-    for(let k=0;k<8;k++){const a=k/8*Math.PI*2;head.add(sphere(0.033,mHair,1,0.82,1,Math.sin(a)*0.05,0.235,Math.cos(a)*0.05-0.02))}
-    head.add(sphere(0.042,mHair,1,0.82,1.08,0,0.255,-0.02));
-  }
+  cap.name='faceCap';
+  const hairSets={},beardSets={};
+  const mkSet=(store,name,fn)=>{const g=new THREE.Group();fn(g);g.visible=false;head.add(g);store[name]=g;};
+  const stache=g=>g.add(box(0.044,0.008,0.012,mHair,0,0.079,0.108));
+  const burns=(g,y,sz)=>{for(const sg of[-1,1])g.add(box(0.012,0.075,sz,mHair,sg*0.083,y,0.04))};
+  mkSet(hairSets,'quiff',g=>{g.add(sphere(1,mHair,0.118,0.095,0.13,0,0.215,-0.025));burns(g,0.06,0.05)});
+  mkSet(hairSets,'twists',g=>{for(let k=0;k<8;k++){const a=k/8*Math.PI*2;g.add(sphere(0.033,mHair,1,0.82,1,Math.sin(a)*0.05,0.235,Math.cos(a)*0.05-0.02))}g.add(sphere(0.042,mHair,1,0.82,1.08,0,0.255,-0.02))});
+  mkSet(hairSets,'afro',g=>{g.add(sphere(1,mHair,0.135,0.125,0.14,0,0.195,-0.02))});
+  mkSet(beardSets,'mustache',g=>stache(g));
+  mkSet(beardSets,'goatee',g=>{stache(g);g.add(sphere(1,mHair,0.05,0.034,0.05,0,0.03,0.058))});
+  mkSet(beardSets,'short',g=>{stache(g);g.add(sphere(1,mHair,0.084,0.036,0.097,0,0.040,0.010))});
+  mkSet(beardSets,'full',g=>{stache(g);g.add(sphere(1,mHair,0.090,0.050,0.100,0,0.046,0.008));g.add(sphere(1,mHair,0.05,0.04,0.05,0,0.02,0.062));burns(g,0.09,0.06)});
+  head.userData.faceRef=true;
 
   // PERNAS SIMÉTRICAS E HARMÔNICAS + CALÇA CARGO PRETA OVERSIZED
   const buildLeg=(sideX,isL)=>{
@@ -2185,6 +2195,7 @@ function createRealisticStreetballPlayer(isAI) {
   root.clothDeformMeshes=clothDeformMeshes;
   root.teeMesh=tee;
   root.hemMesh=hem;
+  root.userData.face={mSkin,mSkinDark,mHair,cap,hairSets,beardSets};
   return root;
 }
 
@@ -2198,6 +2209,85 @@ function setPlayerPantsMode(p, mode) {
 
 const mP = createRealisticStreetballPlayer(false);
 const mA = createRealisticStreetballPlayer(true);
+
+/* ============================================================================
+   PERSONALIZAÇÃO DO ROSTO (pele, cabelo, cor do cabelo e barba)
+   ============================================================================ */
+const FACE_SKINS = [
+  ['Padrão', 0xb6937c, 0x94735e], ['Clara', 0xf0c8a6, 0xcfa683], ['Bronzeada', 0xe0ac84, 0xbf8a63],
+  ['Morena', 0xc68e64, 0xa06f4a], ['Parda', 0xa47552, 0x835a3c], ['Escura', 0x7a5239, 0x5e3d28], ['Muito escura', 0x4b3022, 0x35211a]
+];
+const FACE_HAIR = [
+  ['Preto', 0x1a1614], ['Castanho', 0x4a2e1c], ['Loiro', 0xd9b45a], ['Ruivo', 0x9c3d1c],
+  ['Grisalho', 0xb8b8bc], ['Azul', 0x2563eb], ['Laranja', 0xff5510]
+];
+const FACE_HAIR_STYLES = [['bald', 'Careca'], ['short', 'Curto'], ['quiff', 'Topete'], ['twists', 'Twists'], ['afro', 'Black power']];
+const FACE_BEARDS = [['none', 'Sem barba'], ['mustache', 'Bigode'], ['goatee', 'Cavanhaque'], ['short', 'Barba curta'], ['full', 'Barba cheia']];
+const FACE_DEFAULT = { skin: 0, hair: 'twists', hcol: 0, beard: 'none' };
+const FACE_AI = { skin: 'ai', hair: 'quiff', hcol: 0, beard: 'goatee' };
+let faceCfg = Object.assign({}, FACE_DEFAULT);
+let faceEdit = false, faceCamAng = Math.PI;
+try { const sv = JSON.parse(localStorage.getItem('hoopvlone-face') || 'null'); if (sv && typeof sv === 'object') faceCfg = Object.assign(faceCfg, sv); } catch (e) {}
+
+function applyFace(m, c) {
+  const F = m && m.userData && m.userData.face;
+  if (!F || !c) return;
+  const sk = c.skin === 'ai' ? [0x9e7660, 0x7d5a46] : (FACE_SKINS[c.skin] || FACE_SKINS[0]).slice(1);
+  F.mSkin.color.setHex(sk[0]); F.mSkinDark.color.setHex(sk[1]);
+  for (const k of [F.mSkin, F.mSkinDark]) if (k.emissive) k.emissive.copy(k.color).multiplyScalar(0.07);
+  F.mHair.color.setHex((FACE_HAIR[c.hcol] || FACE_HAIR[0])[1]);
+  F.cap.visible = c.hair !== 'bald';
+  for (const k in F.hairSets) F.hairSets[k].visible = k === c.hair;
+  for (const k in F.beardSets) F.beardSets[k].visible = k === c.beard;
+}
+applyFace(mP, faceCfg);
+applyFace(mA, FACE_AI);
+
+(function buildFaceEditor() {
+  const css = document.createElement('style');
+  css.textContent = "#face-panel{display:none;position:fixed;left:16px;top:16px;bottom:16px;width:min(340px,calc(100% - 32px));overflow:auto;z-index:9999;pointer-events:auto;padding:16px;border-radius:14px;background:rgba(10,12,18,.92);border:1px solid rgba(255,85,16,.5);color:#fff;font:600 13px system-ui,sans-serif}" +
+    "#face-panel h3{margin:0 0 4px;font:700 24px 'Teko',system-ui;letter-spacing:1px}#face-panel h4{margin:14px 0 6px;font-size:11px;letter-spacing:2px;color:#ff8a4d}" +
+    "#face-panel .row{display:flex;flex-wrap:wrap;gap:6px}#face-panel .chip{padding:7px 10px;border-radius:8px;border:2px solid rgba(255,255,255,.18);background:rgba(255,255,255,.05);color:#fff;cursor:pointer;font:600 12px system-ui}" +
+    "#face-panel .chip.on{border-color:#ff5510;background:rgba(255,85,16,.22)}#face-panel .sw{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.2);cursor:pointer;padding:0}#face-panel .sw.on{border-color:#ff5510;box-shadow:0 0 0 2px #fff}" +
+    "#face-panel input[type=range]{width:100%}#face-panel .done{margin-top:16px;width:100%;padding:12px;border-radius:10px;border:0;background:#ff5510;color:#fff;font:700 15px system-ui;cursor:pointer}";
+  document.head.appendChild(css);
+  const pn = document.createElement('div'); pn.id = 'face-panel';
+  pn.innerHTML = "<h3>🧑 PERSONALIZAR ROSTO</h3><div style='opacity:.7'>As mudanças aparecem na hora no boneco.</div>" +
+    "<h4>COR DA PELE</h4><div class='row' id='fp-skin'></div><h4>CABELO</h4><div class='row' id='fp-hair'></div>" +
+    "<h4>COR DO CABELO / BARBA</h4><div class='row' id='fp-hcol'></div><h4>BARBA</h4><div class='row' id='fp-beard'></div>" +
+    "<h4>GIRAR CÂMERA</h4><input type='range' id='fp-rot' min='0' max='360' value='180'><button class='done' id='fp-done'>✔ SALVAR E VOLTAR</button>";
+  document.body.appendChild(pn);
+  const hex = n => '#' + n.toString(16).padStart(6, '0');
+  const fill = (id, items, key, mk) => {
+    const box = pn.querySelector(id); box.innerHTML = '';
+    items.forEach((it, i) => {
+      const val = mk.val(it, i), b = document.createElement('button');
+      b.className = mk.cls + (faceCfg[key] === val ? ' on' : '');
+      mk.paint(b, it);
+      b.onclick = () => { faceCfg[key] = val; applyFace(mP, faceCfg); refresh(); };
+      box.appendChild(b);
+    });
+  };
+  function refresh() {
+    fill('#fp-skin', FACE_SKINS, 'skin', { cls: 'sw', val: (it, i) => i, paint: (b, it) => { b.style.background = hex(it[1]); b.title = it[0]; } });
+    fill('#fp-hair', FACE_HAIR_STYLES, 'hair', { cls: 'chip', val: it => it[0], paint: (b, it) => { b.textContent = it[1]; } });
+    fill('#fp-hcol', FACE_HAIR, 'hcol', { cls: 'sw', val: (it, i) => i, paint: (b, it) => { b.style.background = hex(it[1]); b.title = it[0]; } });
+    fill('#fp-beard', FACE_BEARDS, 'beard', { cls: 'chip', val: it => it[0], paint: (b, it) => { b.textContent = it[1]; } });
+  }
+  pn.querySelector('#fp-rot').oninput = e => { faceCamAng = (+e.target.value) * Math.PI / 180; };
+  pn.querySelector('#fp-done').onclick = () => closeFaceEditor();
+  window.openFaceEditor = () => {
+    refresh(); faceEdit = true; faceCamAng = Math.PI; pn.querySelector('#fp-rot').value = 180;
+    pn.style.display = 'block';
+    const ss = $('start-screen'); if (ss) ss.classList.add('hidden');
+  };
+  window.closeFaceEditor = () => {
+    faceEdit = false; pn.style.display = 'none';
+    try { localStorage.setItem('hoopvlone-face', JSON.stringify(faceCfg)); } catch (e) {}
+    const ss = $('start-screen'); if (ss && inStartMenu) ss.classList.remove('hidden');
+    if (NET.live) netSend({ t: 'face', f: faceCfg });
+  };
+})();
 
 // Poses anatômicas e naturais das mãos: 'relaxed', 'dribble', 'def_active', 'ball_cup', 'finger_roll', 'dunk_cup', 'dunk_slam', 'shoot_follow', 'trap_glock'
 function setPlayerHandPose(m, poseOrGun, dt = 0.016, o = null) {
@@ -2795,6 +2885,7 @@ function netSend(o) { try { if (NET.conn && NET.conn.open) NET.conn.send(o); } c
 function netStatus(t) { const e = document.getElementById('net-status'); if (e) e.textContent = t; }
 
 function netClose() {
+  try { applyFace(mA, FACE_AI); } catch (e) {}
   try { if (NET.conn) NET.conn.close(); } catch (e) {}
   try { if (NET.peer) NET.peer.destroy(); } catch (e) {}
   NET.role = null; NET.live = false; NET.swapped = false; NET.conn = null; NET.peer = null; NET.snap = null;
@@ -2854,7 +2945,9 @@ function netSetupHost(c) {
       NET.rin.K[m.c] = m.t === 'd';
       withRemote(() => (m.t === 'd' ? gameKeyDown(m.c) : gameKeyUp(m.c)));
     } else if (m.t === 'rq') reset();
+    else if (m.t === 'face') applyFace(mA, m.f);
   });
+  netSend({ t: 'face', f: faceCfg });
 }
 
 function swapRoles() {
@@ -2902,6 +2995,7 @@ function netTick(dt) {
 
 /* ---- CONVIDADO ---- */
 function netSetupGuest(c) {
+  netSend({ t: 'face', f: faceCfg });
   // envia as teclas pressionadas e a direção da câmera ~30x por segundo
   NET.timer = setInterval(() => {
     if (NET.role !== 'guest') { clearInterval(NET.timer); return; }
@@ -2921,6 +3015,7 @@ function netMapMsg(m) {
 function netGuestData(m) {
   if (!m) return;
   if (m.t === 's') { NET.snap = m; NET.fresh = true; }
+  else if (m.t === 'face') applyFace(mA, m.f);
   else if (m.t === 'say') say(m.own ? m.m : netMapMsg(m.m), m.d, m.g, true);
   else if (m.t === 'reset') { over = false; $('ov').style.display = 'none'; }
   else if (m.t === 'over') {
@@ -3329,7 +3424,7 @@ function tryJumpOrBlockSpace() {
     (fl && fl.who === 'a' && (fl.phase === 'windup' || fl.elapsed < 0.38) && D(P, A) < 88) ||
     (A.layup > 0.22 && D(P, A) < 80)
   ) {
-    if (R() < 0.72 * staminaEfficiency) {
+    if (R() < 0.84 * staminaEfficiency) {
       executeBlock(P, A);
     }
   }
@@ -3351,7 +3446,7 @@ function tryDef() {
   face(P, B.x, B.y);
 
   // Avanço curto de bote: exige que o defensor já esteja bem próximo para alcançar a bola
-  const lungeSp = P.stamina > 30 ? 34 : 18;
+  const lungeSp = P.stamina > 30 ? 42 : 20;
   P.vx += P.fx * lungeSp;
   P.vy += P.fy * lungeSp;
 
@@ -3360,9 +3455,11 @@ function tryDef() {
 
   if (poss === 'a' && B.s === 'held' && A.layup <= 0) {
     P.steal = 0.46;
-    if (distToOpp < 35) {
-      const proximityBonus = lerp(1.15, 0.78, cl((distToOpp - 20) / 15, 0, 1));
-      const baseSteal = (A.cx > 0 || A.spin > 0 ? 0.08 : 0.36) * staminaEfficiency * proximityBonus;
+    if (distToOpp < 44) {
+      const proximityBonus = lerp(1.35, 0.85, cl((distToOpp - 20) / 24, 0, 1));
+      // Mais fácil roubar bola parada/andando; bem mais difícil quando o oponente está executando um drible
+      const oppMove = A.cx > 0 || A.spin > 0 || A.sb > 0 || A.sd > 0 || A.bb > 0;
+      const baseSteal = Math.min(0.9, (oppMove ? 0.05 : (A.dr ? 0.34 : 0.58)) * staminaEfficiency * proximityBonus);
       if (R() < baseSteal) {
         poss = 'p';
         B.owner = P;
@@ -3380,7 +3477,7 @@ function tryDef() {
     (A.layup > 0.25 && distToOpp < 52)
   ) {
     P.block = 0.68;
-    if (R() < 0.66 * staminaEfficiency) executeBlock(P, A);
+    if (R() < 0.80 * staminaEfficiency) executeBlock(P, A);
   } else {
     if (distToOpp < 70 && fl && fl.who === 'a') P.block = 0.58;
     else P.steal = 0.40;
@@ -4122,7 +4219,7 @@ function updatePhysicsStep(dt) {
       if (D(A, P) < 34 && A.cd <= 0 && P.dunk <= 0) {
         A.cd = 0.68;
         const exhaustedVulnerability = P.exhausted ? 0.14 : 0;
-        const stealChance = ((P.cx > 0 || P.spin > 0 || P.sb > 0 || P.sd > 0 || P.bb > 0) ? 0.015 : P.dr ? 0.05 : charge ? 0.16 : 0.10) + exhaustedVulnerability;
+        const stealChance = ((P.cx > 0 || P.spin > 0 || P.sb > 0 || P.sd > 0 || P.bb > 0) ? 0.008 : P.dr ? 0.04 : charge ? 0.18 : 0.15) + exhaustedVulnerability;
         if (R() < stealChance) {
           A.steal = 0.45;
           poss = 'a'; B.owner = A; charge = null; plan = null;
@@ -5755,6 +5852,10 @@ function render(dt, t) {
       P.y * s + Math.cos(menuOrbit) * 3.55
     );
     _v2.set(P.x * s - 0.85, 1.32, P.y * s - 1.2);
+    if (faceEdit) {
+      _v1.set(P.x * s + Math.sin(faceCamAng) * 0.95, 1.70, P.y * s + Math.cos(faceCamAng) * 0.95);
+      _v2.set(P.x * s, 1.66, P.y * s);
+    }
   } else {
     const cp = Math.cos(pit), sp2 = Math.sin(pit);
     const camDist = isPlayerCelebNow ? 3.8 : 6.2;
