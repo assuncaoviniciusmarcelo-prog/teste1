@@ -1018,6 +1018,11 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
     <div class="seg" id="cfg-fx"><button data-f="1">Ligado</button><button data-f="0">Desligado</button></div>
     <small>Sombras em tempo real, tone mapping, dither pixelado e vinheta. Desligue se o jogo ficar pesado.</small>
   </div>
+  <div class="row" id="cfg-row-mb">
+    <label>Motion blur (desfoque de movimento)</label>
+    <div class="seg" id="cfg-mb"><button data-mb="0">Desligado</button><button data-mb="0.45">Baixo</button><button data-mb="0.65">Médio</button><button data-mb="0.8">Alto</button></div>
+    <small>Rastro suave nos movimentos rápidos de câmera, jogadores e bola.</small>
+  </div>
   <div class="row">
     <label>Controles</label>
     <div class="seg" id="cfg-mode">
@@ -1082,6 +1087,7 @@ const RIM_R = 0.23;
 const BALL_R = 0.12;
 const GRAVITY = 420;
 const FIXED_DT = 1 / 120;
+const GAME_SPEED = 1.18; // ritmo geral do jogo (1.0 = original)
 
 const R = Math.random;
 const cl = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -1125,13 +1131,13 @@ const fxMat = new THREE.ShaderMaterial({
     uLevels: { value: 40.0 },
     uSat: { value: 1.14 },
     uContrast: { value: 1.08 },
-    uVig: { value: 0.34 }
+    uVig: { value: 0.34 }, uPlain: { value: 0 }
   },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
   fragmentShader: [
     'varying vec2 vUv;',
     'uniform sampler2D tDiffuse; uniform vec2 uRes;',
-    'uniform float uExposure, uLevels, uSat, uContrast, uVig;',
+    'uniform float uExposure, uLevels, uSat, uContrast, uVig, uPlain;',
     'const mat3 ACESIn = mat3(vec3(0.59719,0.07600,0.02840), vec3(0.35458,0.90834,0.13383), vec3(0.04823,0.01566,0.83777));',
     'const mat3 ACESOut = mat3(vec3(1.60475,-0.10208,-0.00327), vec3(-0.53108,1.10813,-0.07276), vec3(-0.07367,-0.00605,1.07602));',
     'vec3 rrt(vec3 v){ vec3 a = v*(v+0.0245786)-0.000090537; vec3 b = v*(0.983729*v+0.4329510)+0.238081; return a/b; }',
@@ -1146,6 +1152,7 @@ const fxMat = new THREE.ShaderMaterial({
     '  vec4 tex = texture2D(tDiffuse, vUv);',
     '  vec3 c = toSRGB(aces(tex.rgb));',
     '  c = mix(vec3(0.086,0.098,0.133), c, smoothstep(0.0, 0.9, tex.a));',
+    '  if (uPlain < 0.5) {',
     '  float l = dot(c, vec3(0.299,0.587,0.114));',
     '  c = mix(vec3(l), c, uSat);',
     '  c = (c - 0.5) * uContrast + 0.5;',
@@ -1153,6 +1160,7 @@ const fxMat = new THREE.ShaderMaterial({
     '  c = floor(c * (uLevels - 1.0) + d) / (uLevels - 1.0);',
     '  vec2 v = vUv - 0.5;',
     '  c *= 1.0 - dot(v, v) * uVig * 2.2;',
+    '  }',
     '  gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);',
     '}'
   ].join('\n'),
@@ -1162,12 +1170,62 @@ const fxQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), fxMat);
 fxQuad.frustumCulled = false;
 fxScene.add(fxQuad);
 
+/* ---- MOTION BLUR: acumulação temporal (blend do quadro atual com o histórico), independente do FPS ---- */
+window.motionBlur = 0; // 0 = desligado; 0..0.9 = força (fração do quadro anterior que permanece)
+const mbHalf = !!(rd.capabilities.isWebGL2 && rd.getContext().getExtension('EXT_color_buffer_float'));
+const mbRT = [0, 1].map(() => {
+  const t = new THREE.WebGLRenderTarget(64, 64, {
+    minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat,
+    type: mbHalf ? THREE.HalfFloatType : THREE.UnsignedByteType, depthBuffer: false, stencilBuffer: false
+  });
+  t.texture.generateMipmaps = false;
+  return t;
+});
+const mbMat = new THREE.ShaderMaterial({
+  uniforms: { tCur: { value: null }, tPrev: { value: null }, uK: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+  fragmentShader: [
+    'varying vec2 vUv; uniform sampler2D tCur, tPrev; uniform float uK;',
+    'void main(){',
+    '  vec4 c = texture2D(tCur, vUv), p = texture2D(tPrev, vUv);',
+    '  vec4 m = mix(c, p, uK);',
+    '  vec4 d = m - c;',
+    '  m = c + sign(d) * max(abs(d) - 0.6/255.0, 0.0);', // garante convergência (sem rastro "preso" por quantização)
+    '  gl_FragColor = m;',
+    '}'
+  ].join('\n'),
+  depthTest: false, depthWrite: false
+});
+const mbScene = new THREE.Scene();
+const mbQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mbMat);
+mbQuad.frustumCulled = false; mbScene.add(mbQuad);
+let mbIdx = 0, mbValid = false, mbLast = 0;
+window.setMotionBlur = v => {
+  const prevPost = window.fxEnabled || window.motionBlur > 0;
+  window.motionBlur = cl(+v || 0, 0, 0.9); mbValid = false;
+  if ((window.fxEnabled || window.motionBlur > 0) !== prevPost) fit();
+};
+
 function renderFrame() {
-  if (window.fxEnabled) {
+  const useMB = window.motionBlur > 0;
+  if (window.fxEnabled || useMB) {
     rd.toneMapping = THREE.NoToneMapping; // o tone mapping é feito no shader de pós-processamento
     sc.background = null; rd.setClearColor(0x000000, 0); // o fundo é composto no shader (alpha = cena)
     rd.setRenderTarget(fxRT);
     rd.render(sc, cam);
+    let src = fxRT.texture;
+    if (useMB) {
+      const now = performance.now(), dt = cl((now - mbLast) / 1000, 0.001, 0.1); mbLast = now;
+      const dst = mbRT[mbIdx], prev = mbRT[1 - mbIdx];
+      mbMat.uniforms.tCur.value = fxRT.texture;
+      mbMat.uniforms.tPrev.value = prev.texture;
+      mbMat.uniforms.uK.value = mbValid ? Math.pow(window.motionBlur, dt * 60) : 0;
+      rd.setRenderTarget(dst);
+      rd.render(mbScene, fxCam);
+      src = dst.texture; mbIdx = 1 - mbIdx; mbValid = true;
+    } else mbValid = false;
+    fxMat.uniforms.tDiffuse.value = src;
+    fxMat.uniforms.uPlain.value = window.fxEnabled ? 0 : 1;
     rd.setRenderTarget(null);
     rd.render(fxScene, fxCam);
   } else {
@@ -1193,9 +1251,11 @@ function fit() {
   const rw = Math.max(64, Math.round(innerWidth * q));
   const rh = Math.max(64, Math.round(innerHeight * q));
   rd.setPixelRatio(1);
-  if (window.fxEnabled) {
+  if (window.fxEnabled || window.motionBlur > 0) {
     rd.setSize(innerWidth, innerHeight, false);
     fxRT.setSize(rw, rh);
+    for (const t of mbRT) t.setSize(rw, rh);
+    mbValid = false;
     fxMat.uniforms.uRes.value.set(rw, rh);
   } else {
     rd.setSize(rw, rh, false);
@@ -1261,7 +1321,7 @@ function enableShadowsOnScene() {
     const m = Array.isArray(o.material) ? o.material[0] : o.material;
     const basic = m.isMeshBasicMaterial;
     o.receiveShadow = !basic;
-    o.castShadow = !basic && !(m.transparent && m.opacity < 0.95);
+    o.castShadow = !basic && !(m.transparent && m.opacity < 0.95) && !o.userData.noShadow;
   });
 }
 
@@ -1737,6 +1797,210 @@ function createBlenderOctahedralBone(len, radius = 0.025, dirY = -1) {
   return grp;
 }
 
+/* ============================================================================
+   GERADOR DE CABELOS / BARBAS (cascas ajustadas à superfície da cabeça)
+   ============================================================================ */
+let FACE_SHELLS = null;
+function buildFaceShells(headProfile, pw, ss) {
+  // ---- textura de fios (listras finas ao longo do crescimento) ----
+  const tex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d'); g.fillStyle = '#dcdcdc'; g.fillRect(0, 0, 128, 128);
+    let sd = 11; const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    for (let k = 0; k < 420; k++) {
+      const x = r() * 128, l = (165 + r() * 90) | 0;
+      g.strokeStyle = `rgba(${l},${l},${l},${0.35 + r() * 0.45})`; g.lineWidth = 0.6 + r() * 1.2;
+      g.beginPath(); g.moveTo(x, 0); g.bezierCurveTo(x + (r() - .5) * 6, 43, x + (r() - .5) * 6, 86, x, 128); g.stroke();
+    }
+    for (let k = 0; k < 150; k++) {
+      const x = r() * 128; g.strokeStyle = 'rgba(60,60,60,0.30)'; g.lineWidth = 0.7;
+      g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 128); g.stroke();
+    }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(10, 3); t.encoding = THREE.sRGBEncoding;
+    return t;
+  })();
+
+  // ---- ruídos procedurais ----
+  const hash3 = (x, y, z) => { let h = (x * 374761393 + y * 668265263 + z * 1274126177) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+  const sm = t => t * t * (3 - 2 * t);
+  const vnoise = (x, y, z) => {
+    const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z), fx = sm(x - ix), fy = sm(y - iy), fz = sm(z - iz);
+    const L = (a, b, t) => a + (b - a) * t, h = (a, b, c) => hash3(ix + a, iy + b, iz + c);
+    return L(L(L(h(0,0,0), h(1,0,0), fx), L(h(0,1,0), h(1,1,0), fx), fy), L(L(h(0,0,1), h(1,0,1), fx), L(h(0,1,1), h(1,1,1), fx), fy), fz);
+  };
+  const worley = (P, cs) => {
+    const X = P.x / cs, Y = P.y / cs, Z = P.z / cs, ix = Math.floor(X), iy = Math.floor(Y), iz = Math.floor(Z);
+    let best = 9, bh = 0;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) {
+      const cx = ix + a, cy = iy + b, cz = iz + c;
+      const dx = cx + hash3(cx, cy, cz) - X, dy = cy + hash3(cx + 17, cy, cz) - Y, dz = cz + hash3(cx, cy + 29, cz) - Z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < best) { best = d2; bh = hash3(cx, cy + 31, cz + 7); }
+    }
+    return [Math.sqrt(best), bh];
+  };
+  const clump = P => vnoise(P.x * 160 + 5, P.y * 160, P.z * 160);
+
+  // ---- teste "dentro da cabeça": segmento do rosto + calota do crânio (mesma geometria do boneco) ----
+  const insideHead = (x, y, z) => {
+    const ex = x / (0.085 * 1.05), ey = (y - 0.13) / 0.085, ez = (z + 0.03) / 0.085;
+    if (ex * ex + ey * ey + ez * ez < 1) return true;
+    const r = Math.hypot(x, z), nx = r > 1e-6 ? x / r : 0, nz = r > 1e-6 ? z / r : 1;
+    let t = Math.max(0, y / 0.24);
+    for (let k = 0; k < 2; k++) t = (y - headProfile(cl(t, 0, 1), nx, nz)[2]) / 0.24;
+    if (t < 0 || t > 1) return false;
+    const p = headProfile(t, nx, nz);
+    return r < Math.hypot(nx * p[0], nz * p[1] + p[3]);
+  };
+  // ---- campo de distâncias: para cada direção (grade esférica) a partir de um centro, a distância até a pele ----
+  const field = (cx, cy, cz, NU, NV, v0, v1) => {
+    const dirs = new Float32Array(NU * (NV + 1) * 3), dist = new Float32Array(NU * (NV + 1));
+    for (let j = 0; j <= NV; j++) {
+      const ph = v0 + (v1 - v0) * j / NV, sp = Math.sin(ph), cp = Math.cos(ph);
+      for (let i = 0; i < NU; i++) {
+        const th = Math.PI + i / NU * Math.PI * 2, dx = sp * Math.sin(th), dy = cp, dz = sp * Math.cos(th), s = j * NU + i;
+        let a = 0, b = 0.25;
+        for (let k = 0; k < 22; k++) { const m = (a + b) / 2; if (insideHead(cx + dx * m, cy + dy * m, cz + dz * m)) a = m; else b = m; }
+        dirs[s * 3] = dx; dirs[s * 3 + 1] = dy; dirs[s * 3 + 2] = dz; dist[s] = a;
+      }
+    }
+    return { cx, cy, cz, NU, NV, dirs, dist };
+  };
+  // ---- casca: desloca a pele ao longo do raio pela espessura do estilo; regiões sem fios são removidas ----
+  const shell = (F, thFn, dnFn) => {
+    const { NU, NV, dirs, dist, cx, cy, cz } = F, W = NU + 1, N = W * (NV + 1);
+    const pos = new Float32Array(N * 3), uv = new Float32Array(N * 2), ok = new Uint8Array(N), P = { x: 0, y: 0, z: 0 };
+    const thc = new Float32Array(NU * (NV + 1)), dnc = new Float32Array(NU * (NV + 1)), dn = new Float32Array(N);
+    for (let s = 0; s < thc.length; s++) {
+      const dx = dirs[s * 3], dy = dirs[s * 3 + 1], dz = dirs[s * 3 + 2], r = dist[s];
+      P.x = cx + dx * r; P.y = cy + dy * r; P.z = cz + dz * r;
+      thc[s] = thFn(P, dx, dy, dz, r);
+      // densidade 0..1 (fração de fios): usada para esmaecer as bordas (dither) em vez de cortar em linha dura
+      dnc[s] = cl(dnFn ? dnFn(P, dx, dy, dz, r) : thc[s] / 0.0032, 0, 1);
+    }
+    for (let j = 0; j <= NV; j++) for (let i = 0; i <= NU; i++) {
+      const s = j * NU + (i % NU), k = j * W + i, r = dist[s];
+      let th = thc[s];
+      if (dnc[s] > 0.004) { ok[k] = 1; dn[k] = dnc[s]; th = Math.max(th, 0.0012); } else { th = 0.0012; dn[k] = 0; }
+      pos[k * 3] = cx + dirs[s * 3] * (r + th); pos[k * 3 + 1] = cy + dirs[s * 3 + 1] * (r + th); pos[k * 3 + 2] = cz + dirs[s * 3 + 2] * (r + th);
+      uv[k * 2] = i / NU; uv[k * 2 + 1] = 1 - j / NV;
+    }
+    const idx = [];
+    for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) {
+      const a = j * W + i, b = a + 1, c = a + W, d = c + 1;
+      if (ok[a] || ok[b] || ok[c] || ok[d]) idx.push(a, c, b, b, c, d);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.setAttribute('aDens', new THREE.BufferAttribute(dn, 1));
+    g.setIndex(idx); g.computeVertexNormals();
+    const n = g.attributes.normal;
+    for (let j = 0; j <= NV; j++) { // costura (início/fim da volta) com normais contínuas
+      const a = j * W, b = a + NU, x = n.getX(a) + n.getX(b), y = n.getY(a) + n.getY(b), z = n.getZ(a) + n.getZ(b), l = Math.hypot(x, y, z) || 1;
+      n.setXYZ(a, x / l, y / l, z / l); n.setXYZ(b, x / l, y / l, z / l);
+    }
+    g.computeBoundingSphere();
+    return g;
+  };
+
+  const az = P => Math.abs(Math.atan2(P.x, P.z)); // 0 = frente, PI = nuca
+
+  /* ---------- CABELO ---------- */
+  const HC = { x: 0, y: 0.13, z: -0.02 };
+  const FH = field(HC.x, HC.y, HC.z, 176, 96, 0, 2.45);
+  // linha do cabelo (altura mínima por ângulo): testa, entradas, costeletas, contorno da orelha e nuca
+  const HL = [[0, .184], [0.45, .182], [0.80, .172], [1.05, .158], [1.16, .120], [1.20, .100], [1.36, .100], [1.44, .140], [1.52, .150], [1.80, .150], [2.05, .110], [2.40, .078], [Math.PI, .072]];
+  // borda do cabelo: nítida na testa e cada vez mais suave nas laterais/nuca
+  const hmSoft = P => lerp(0.004, 0.011, ss(0.3, 1.0, az(P)));
+  const hm = (P, soft) => ss(-0.002, Math.max(soft || 0, hmSoft(P)), P.y - pw(az(P), HL));
+  const hdens = P => hm(P, 0);
+  // DEGRADÊ: topo cheio, laterais/nuca vão afinando até a pele (cabelo -> pele), testa com linha firme
+  const fadeD = P => {
+    const a = az(P), t = ss(pw(a, HL) + 0.002, 0.19, P.y);
+    const d = hm(P, 0) * lerp(1, Math.pow(t, 0.9), ss(0.35, 1.0, a));
+    const edge = 4 * d * (1 - d);
+    return cl(d + (clump(P) - 0.5) * 0.55 * edge, 0, 1);
+  };
+  const side = P => ss(0.150, 0.195, P.y); // 0 nas laterais baixas, 1 no topo
+  const rayEll = (dx, dy, dz, ex, ey, ez, rx, ry, rz) => {
+    const ox = (HC.x - ex) / rx, oy = (HC.y - ey) / ry, oz = (HC.z - ez) / rz, qx = dx / rx, qy = dy / ry, qz = dz / rz;
+    const A = qx * qx + qy * qy + qz * qz, B = 2 * (ox * qx + oy * qy + oz * qz), C = ox * ox + oy * oy + oz * oz - 1;
+    return (-B + Math.sqrt(Math.max(0, B * B - 4 * A * C))) / (2 * A);
+  };
+  const HS = {
+    buzz: P => hm(P, 0.004) * (0.0020 + 0.0006 * clump(P)),
+    short: P => hm(P, 0.005) * (0.0048 + 0.0028 * ss(0.16, 0.23, P.y) + 0.0015 * clump(P)),
+    fade: P => { const d = fadeD(P); return hm(P, 0) * (0.0013 + (0.0090 + 0.0024 * clump(P)) * Math.pow(d, 1.25)); },
+    waves: P => {
+      const cr = Math.hypot(P.x, P.y - 0.215, P.z + 0.055), an = Math.atan2(P.x, P.z + 0.055);
+      return hm(P, 0.005) * (0.0040 + 0.0014 * (0.5 + 0.5 * Math.sin(cr * 560 + an * 2)));
+    },
+    flattop: (P, dx, dy, dz, r) => {
+      let o = 0.2;
+      if (dy > 0.02) o = Math.min(o, (0.268 - HC.y) / dy);
+      if (dz > 0.02) o = Math.min(o, (0.112 - HC.z) / dz);
+      if (dz < -0.02) o = Math.min(o, (-0.142 - HC.z) / dz);
+      if (Math.abs(dx) > 0.02) o = Math.min(o, 0.110 / Math.abs(dx));
+      const box = cl(o - r, 0, 0.06) * ss(0.165, 0.205, P.y);
+      return hm(P, 0.004) * Math.max(lerp(0.0015, 0.005, side(P)), box);
+    },
+    quiff: P => {
+      const g = Math.exp(-((P.x / 0.055) ** 2 + ((P.y - 0.215) / 0.04) ** 2 + ((P.z - 0.055) / 0.06) ** 2));
+      return hm(P, 0.005) * (lerp(0.0015, 0.010, side(P)) + 0.032 * g + 0.0018 * clump(P));
+    },
+    mohawk: P => {
+      const st = 1 - ss(0.014, 0.026, Math.abs(P.x)), sp = 0.75 + 0.25 * Math.sin(P.z * 240);
+      return hm(P, 0.004) * (0.0013 + st * ss(0.16, 0.2, P.y) * 0.03 * sp);
+    },
+    cornrows: P => {
+      const rd = Math.pow(Math.abs(Math.cos(P.x * Math.PI / 0.017)), 0.7), br = 0.8 + 0.2 * Math.abs(Math.sin((P.z - P.y) * 300));
+      return hm(P, 0.004) * (0.0018 + 0.0052 * rd * br);
+    },
+    twists: P => {
+      const [d, h] = worley(P, 0.02), k = Math.max(0, 1 - d * d * 3.2);
+      return hm(P, 0.012) * (0.006 + side(P) * (0.010 + 0.016 * h) * Math.sqrt(k));
+    },
+    curly: P => {
+      const [d] = worley(P, 0.014);
+      return hm(P, 0.01) * (0.012 + 0.005 * ss(0.16, 0.22, P.y) + 0.006 * (1 - Math.min(1, d * 1.6)));
+    },
+    afro: (P, dx, dy, dz, r) => {
+      const s = rayEll(dx, dy, dz, 0, 0.17, -0.02, 0.135, 0.125, 0.145), [d] = worley(P, 0.016);
+      return hm(P, 0.03) * Math.max(0.006, s - r + 0.004 * (1 - Math.min(1, d * 1.5)));
+    },
+    manbun: P => hm(P, 0.004) * (0.0042 + 0.0008 * clump(P))
+  };
+  const hair = {};
+  for (const k in HS) hair[k] = shell(FH, HS[k], k === 'fade' ? fadeD : hdens);
+
+  /* ---------- BARBA ---------- */
+  const FB = field(0, 0.07, 0.01, 150, 80, 0.5, Math.PI);
+  const mouthM = P => { const e = (P.x / 0.031) ** 2 + ((P.y - 0.0645) / 0.0105) ** 2; return P.z > 0.06 ? ss(1.0, 1.45, e) : 1; };
+  const BT = [[0, .0885], [0.22, .0885], [0.38, .090], [0.7, .098], [1.0, .108], [1.22, .120], [1.42, .120], [1.6, .075], [1.9, .03], [Math.PI, .03]];
+  const full = P => { const a = az(P); return (1 - ss(-0.010, 0.004, P.y - pw(a, BT))) * mouthM(P) * (1 - ss(1.55, 2.05, a)); };
+  const JL = [[0, 0.004], [0.7, 0.008], [1.05, 0.030], [1.22, 0.075], [1.30, 0.14], [Math.PI, 0.14]];
+  const must = P => mouthM(P) * (1 - ss(0.030, 0.037, Math.abs(P.x))) * ss(0.072, 0.076, P.y) * (1 - ss(0.0875, 0.0905, P.y)) * ss(0.06, 0.08, P.z);
+  const goat = P => mouthM(P) * (1 - ss(0.032, 0.040, Math.abs(P.x))) * (1 - ss(0.0875, 0.0905, P.y)) * ss(0.03, 0.05, P.z);
+  const chinBoost = P => (1 - ss(0.01, 0.06, P.y)) * ss(-0.02, 0.04, P.z);
+  const BS = {
+    stubble: P => full(P) * 0.0016,
+    mustache: P => must(P) * (0.0045 + 0.001 * clump(P)),
+    goatee: P => goat(P) * (0.005 + 0.004 * (1 - ss(0.01, 0.05, P.y)) + 0.0012 * clump(P)),
+    horseshoe: P => {
+      const ax = Math.abs(P.x), bar = ss(0.024, 0.028, ax) * (1 - ss(0.036, 0.041, ax)) * (1 - ss(0.086, 0.09, P.y)) * ss(0.018, 0.026, P.y) * ss(0.05, 0.07, P.z);
+      return Math.max(must(P), bar * mouthM(P)) * (0.005 + 0.001 * clump(P));
+    },
+    chinstrap: P => full(P) * (1 - ss(0.012, 0.02, P.y - pw(az(P), JL))) * (0.004 + 0.001 * clump(P)),
+    short: P => full(P) * (0.0034 + 0.0012 * clump(P)),
+    full: P => full(P) * (0.0065 + 0.0065 * chinBoost(P) + 0.002 * clump(P)),
+    long: P => full(P) * (0.007 + 0.04 * Math.pow(1 - ss(0.0, 0.07, P.y), 1.5) * ss(-0.01, 0.05, P.z) + 0.003 * clump(P))
+  };
+  const beard = {};
+  for (const k in BS) beard[k] = shell(FB, BS[k], k === 'stubble' ? (P => full(P) * 0.62) : null);
+  return { tex, hair, beard };
+}
+
 function createRealisticStreetballPlayer(isAI) {
   const cfg = isAI ? {
     skin: 0x9e7660,
@@ -1970,7 +2234,9 @@ function createRealisticStreetballPlayer(isAI) {
 
   // CABEÇA SIMÉTRICA E HARMÔNICA
   const head=new THREE.Group();head.position.y=0.082;neck.add(head);head.add(createBlenderOctahedralBone(0.24,0.024,1));
-  const FP=[[0,.040,.052],[0.06,.056,.068],[0.14,.082,.090],[0.24,.0895,.0985],[0.36,.0905,.1035],[0.50,.0945,.1090],[0.62,.0945,.1100],[0.72,.0885,.1020],[0.80,.0735,.0850],[0.90,.0445,.0515],[1,.006,.0069]];
+  // Perfil do rosto: do queixo (t=0) até o ângulo da mandíbula (t≈0.15) a largura cresce de forma quase linear (maxilar reto),
+  // com base do queixo mais larga e projetada (visual mais másculo)
+  const FP=[[0,.047,.060],[0.035,.055,.069],[0.08,.0665,.0805],[0.14,.0815,.0915],[0.22,.0890,.0975],[0.36,.0905,.1035],[0.50,.0945,.1090],[0.62,.0945,.1100],[0.70,.0924,.1075],[0.78,.0857,.0998],[0.85,.0752,.0876],[0.91,.0610,.0711],[0.96,.0421,.0491],[0.99,.0214,.0249],[1,.005,.0058]];
   const faceProf=(t,c)=>{
     let i=0;while(i<FP.length-2&&t>FP[i+1][0])i++;
     const p0=FP[Math.max(i-1,0)][c],p1=FP[i][c],p2=FP[i+1][c],p3=FP[Math.min(i+2,FP.length-1)][c];
@@ -1978,19 +2244,23 @@ function createRealisticStreetballPlayer(isAI) {
     return 0.5*((2*p1)+(-p0+p2)*u+(2*p0-5*p1+4*p2-p3)*u*u+(-p0+3*p1-3*p2+p3)*u*u*u);
   };
   const gauss=(t,c,w)=>Math.exp(-((t-c)/w)*((t-c)/w));
-  head.add(createHumanSegment(0.24,mSkin,false,(t,nx,nz)=>{
+  const headProfile=(t,nx,nz)=>{
     const ax=Math.abs(nx),fr=Math.max(0,nz);
     let rx=faceProf(t,1),rz=faceProf(t,2);
     const x=nx*rx,gx=(w,c=0)=>gauss(x,c,w);
     const pair=(w,c)=>gx(w,c)+gx(w,-c);
-    rx+=0.010*gauss(t,0.13,0.05)*ax;                                        // ângulo da mandíbula marcado
+    rx+=0.0045*gauss(t,0.15,0.035)*ax*ax;                                    // ângulo da mandíbula definido (sem bojo, linha reta até o queixo)
     rx+=0.005*gauss(t,0.50,0.07)*ax;                                         // zigomático alto
     rx-=0.0025*gauss(t,0.36,0.05)*ax*(1-ax*ax);                              // leve plano sob a maçã (só na frente da bochecha)
-    rx+=0.008*gauss(t,0.30,0.10)*ax*ax*ax;                                   // ramo da mandíbula: espessura contínua do ângulo até a orelha
-    rx-=0.003*gauss(t,0.66,0.05)*ax;                                        // têmporas
+    rx+=0.007*gauss(t,0.30,0.10)*ax*ax*ax;                                   // ramo da mandíbula: espessura contínua do ângulo até a orelha
+    rx-=0.0012*gauss(t,0.66,0.05)*ax;                                        // têmporas
     rz+=0.0075*gauss(t,0.65,0.04)*fr;                                       // arcada superciliar
-    rz+=0.0055*gauss(t,0.075,0.04)*fr*gx(0.04);                              // queixo quadrado projetado
+    rz+=0.015*gauss(t,0.05,0.065)*fr*gx(0.05);                               // queixo forte e projetado para frente
     rz-=0.003*gauss(t,0.19,0.03)*fr*gx(0.05);                                // sulco mentolabial
+    // seção transversal "superelíptica" na mandíbula/queixo: contorno mais quadrado e simétrico visto de baixo/frente
+    const sq=(1-ss(0.06,0.21,t))*fr;
+    if(sq>0.001){const p=2+1.2*sq,f=Math.pow(Math.pow(ax,p)+Math.pow(Math.abs(nz),p),-1/p);rx*=f;rz*=f;}
+    const dy=-0.006*fr*fr*gx(0.05)*(1-ss(0,0.10,t));                         // queixo levemente mais longo (desce um pouco)
     let dz=0.008*fr*(1-smoothstep(cl((t-0.36)/0.20,0,1)));
     dz+=0.0125*gauss(t,0.405,0.032)*gx(0.0165)*fr;                          // ponta do nariz
     dz+=0.0065*gauss(t,0.50,0.075)*gx(0.0075)*fr;                           // dorso reto do nariz
@@ -2000,8 +2270,9 @@ function createRealisticStreetballPlayer(isAI) {
     dz-=0.002*gauss(t,0.36,0.010)*gx(0.004)*fr;                              // filtro labial
     dz+=0.0022*gauss(t,0.302,0.012)*gx(0.02)*fr;                             // lábio superior
     dz+=0.003*gauss(t,0.25,0.014)*gx(0.018)*fr;                              // lábio inferior
-    return [rx,rz,0,dz];
-  },96,60));
+    return [rx,rz,dy,dz];
+  };
+  head.add(createHumanSegment(0.24,mSkin,false,headProfile,96,60));
   head.add(fsphere(0.085,mSkin,1.05,1.0,1.0,0,0.13,-0.03));
   // ================= OLHOS REALISTAS =================
   // Globo ocular esférico com textura pintada (esclera com vasinhos, íris com fibras, anel límbico, pupila),
@@ -2062,7 +2333,6 @@ function createRealisticStreetballPlayer(isAI) {
     head.add(fsphere(0.008,mSkin,0.3,0.8,0.4,sg*0.101,0.128,-0.007));
     head.add(fsphere(0.007,mSkin,0.5,1.1,0.7,sg*0.097,0.104,0));
     head.add(fsphere(0.005,mSkin,0.5,0.8,0.6,sg*0.099,0.12,0.011));
-    head.add(box(0.011,0.05,0.012,mHair,sg*0.093,0.135,0.03));
   }
   // ================= BOCA REALISTA =================
   // Lábios modelados em malha: arco do cupido, lábio inferior mais cheio, cantos que se fundem à pele e linha da boca.
@@ -2089,21 +2359,41 @@ function createRealisticStreetballPlayer(isAI) {
     const pts=[];for(let i=0;i<=24;i++){const u=-1+2*i/24,x=u*W;pts.push(new THREE.Vector3(x,y0,zb(x)+0.0019*(1-Math.pow(Math.abs(u),2.4))+0.0002));}
     head.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),40,0.00055,6,false),mDark));
   }
-  const cap=new THREE.Mesh(new THREE.SphereGeometry(1,48,24,0,Math.PI*2,0,Math.PI*0.5),mHair);
-  cap.scale.set(0.102,0.13,0.117);cap.position.set(0,0.125,-0.004);cap.rotation.x=-0.5;head.add(cap);
-  cap.name='faceCap';
+  // ================= CABELOS E BARBAS ESCULPIDOS SOBRE A CABEÇA =================
+  // Cada estilo é uma "casca" gerada a partir da própria superfície da cabeça (raios a partir de um centro interno),
+  // com espessura variável por região (linha do cabelo, costeletas, degradê, volume, textura de fios/cachos).
+  // As geometrias são geradas uma única vez e compartilhadas entre todos os bonecos.
+  if(!FACE_SHELLS) FACE_SHELLS=buildFaceShells(headProfile,pw,ss);
+  const FS=FACE_SHELLS;
+  mHair.map=FS.tex;
+  const densPatch=m=>{
+    m.onBeforeCompile=sh=>{
+      sh.vertexShader=sh.vertexShader
+        .replace('#include <common>','#include <common>\nattribute float aDens;\nvarying float vDens;')
+        .replace('#include <begin_vertex>','#include <begin_vertex>\nvDens = aDens;');
+      sh.fragmentShader=sh.fragmentShader
+        .replace('#include <common>','#include <common>\nvarying float vDens;')
+        .replace('#include <clipping_planes_fragment>','#include <clipping_planes_fragment>\nif (vDens < fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))))) discard;');
+    };
+    m.customProgramCacheKey=()=>'hairdens';
+    return m;
+  };
+  const shellMat=(base,extra)=>{const m=densPatch(StylizedMat(base,0.82,0.02,false));m.map=FS.tex;m.polygonOffset=true;m.polygonOffsetFactor=-1;m.polygonOffsetUnits=-2;return Object.assign(m,extra||{});};
+  const mHairShell=shellMat(cfg.hair);
+  const mBeard=shellMat(cfg.hair);
+  const mStubble=shellMat(cfg.hair);
   const hairSets={},beardSets={};
-  const mkSet=(store,name,fn)=>{const g=new THREE.Group();fn(g);g.visible=false;head.add(g);store[name]=g;};
-  const stache=g=>g.add(box(0.044,0.008,0.012,mHair,0,0.079,0.108));
-  const burns=(g,y,sz)=>{for(const sg of[-1,1])g.add(box(0.012,0.075,sz,mHair,sg*0.083,y,0.04))};
-  mkSet(hairSets,'quiff',g=>{g.add(fsphere(1,mHair,0.118,0.095,0.13,0,0.215,-0.025));burns(g,0.06,0.05)});
-  mkSet(hairSets,'twists',g=>{for(let k=0;k<8;k++){const a=k/8*Math.PI*2;g.add(fsphere(0.033,mHair,1,0.82,1,Math.sin(a)*0.05,0.235,Math.cos(a)*0.05-0.02))}g.add(fsphere(0.042,mHair,1,0.82,1.08,0,0.255,-0.02))});
-  mkSet(hairSets,'manbun',g=>{g.add(fsphere(1,mHair,0.098,0.062,0.118,0,0.215,-0.03));g.add(fsphere(0.036,mHair,1,1.05,1,0,0.272,-0.052));burns(g,0.075,0.04)});
-  mkSet(hairSets,'afro',g=>{g.add(fsphere(1,mHair,0.135,0.125,0.14,0,0.195,-0.02))});
-  mkSet(beardSets,'mustache',g=>stache(g));
-  mkSet(beardSets,'goatee',g=>{stache(g);g.add(fsphere(1,mHair,0.05,0.034,0.05,0,0.03,0.058))});
-  mkSet(beardSets,'short',g=>{stache(g);g.add(fsphere(1,mHair,0.092,0.036,0.100,0,0.040,0.011))});
-  mkSet(beardSets,'full',g=>{stache(g);g.add(fsphere(1,mHair,0.098,0.050,0.103,0,0.046,0.010));g.add(fsphere(1,mHair,0.05,0.04,0.05,0,0.02,0.062));burns(g,0.09,0.06)});
+  const mkSet=(store,name,fn)=>{const g=new THREE.Group();fn(g);g.traverse(o=>{o.userData.noShadow=true});g.visible=false;head.add(g);store[name]=g;};
+  for(const k in FS.hair)mkSet(hairSets,k,g=>{
+    g.add(new THREE.Mesh(FS.hair[k],mHairShell));
+    if(k==='manbun'){
+      g.add(fsphere(0.033,mHairShell,1,0.92,1,0,0.236,-0.068));
+      const tie=new THREE.Mesh(new THREE.TorusGeometry(0.019,0.0035,8,20),mDark);
+      tie.position.set(0,0.215,-0.06);tie.rotation.x=Math.PI/2-0.9;g.add(tie);
+    }
+  });
+  for(const k in FS.beard)mkSet(beardSets,k,g=>g.add(new THREE.Mesh(FS.beard[k],k==='stubble'?mStubble:mBeard)));
+  const cap=null;
   head.userData.faceRef=true;
 
   // PERNAS SIMÉTRICAS E HARMÔNICAS + CALÇA CARGO PRETA OVERSIZED
@@ -2337,7 +2627,7 @@ function createRealisticStreetballPlayer(isAI) {
   root.clothDeformMeshes=clothDeformMeshes;
   root.teeMesh=tee;
   root.hemMesh=hem;
-  root.userData.face={mSkin,mSkinDark,mHair,mIris,mLip,paintEye,cap,hairSets,beardSets};
+  root.userData.face={mSkin,mSkinDark,mHair,mHairShell,mBeard,mStubble,mIris,mLip,paintEye,cap,hairSets,beardSets};
   return root;
 }
 
@@ -2363,18 +2653,27 @@ const FACE_SKINS = [
 ];
 const FACE_HAIR = [
   ['Preto', 0x1a1614], ['Castanho', 0x4a2e1c], ['Loiro', 0xd9b45a], ['Ruivo', 0x9c3d1c],
-  ['Grisalho', 0xb8b8bc], ['Azul', 0x2563eb], ['Laranja', 0xff5510], ['Dourado', 0xb07a3a]
+  ['Grisalho', 0xb8b8bc], ['Azul', 0x2563eb], ['Laranja', 0xff5510], ['Dourado', 0xb07a3a],
+  ['Castanho claro', 0x7a5232], ['Platinado', 0xe6dcc0], ['Branco', 0xf1f1f1], ['Vermelho', 0xb91c1c],
+  ['Rosa', 0xec4899], ['Verde', 0x16a34a], ['Roxo', 0x7c3aed]
 ];
 const FACE_EYES = [['Verde', 0x6b7f2a], ['Castanho', 0x4a2f1a], ['Azul', 0x3b6ea5], ['Cinza', 0x7a8590], ['Mel', 0x9a6a1f]];
-const FACE_HAIR_STYLES = [['bald', 'Careca'], ['short', 'Curto'], ['quiff', 'Topete'], ['twists', 'Twists'], ['afro', 'Black power'], ['manbun', 'Coque']];
-const FACE_BEARDS = [['none', 'Sem barba'], ['mustache', 'Bigode'], ['goatee', 'Cavanhaque'], ['short', 'Barba curta'], ['full', 'Barba cheia']];
+const FACE_HAIR_STYLES = [
+  ['bald', 'Careca'], ['buzz', 'Raspado'], ['short', 'Curto'], ['fade', 'Degradê'], ['waves', 'Waves 360'],
+  ['flattop', 'Flat top'], ['quiff', 'Topete'], ['mohawk', 'Moicano'], ['cornrows', 'Tranças'],
+  ['twists', 'Twists'], ['curly', 'Cacheado'], ['afro', 'Black power'], ['manbun', 'Coque']
+];
+const FACE_BEARDS = [
+  ['none', 'Sem barba'], ['stubble', 'Por fazer'], ['mustache', 'Bigode'], ['goatee', 'Cavanhaque'], ['horseshoe', 'Ferradura'],
+  ['chinstrap', 'Contorno'], ['short', 'Barba curta'], ['full', 'Barba cheia'], ['long', 'Barba longa']
+];
 const _lipTint = new THREE.Color(0xb04a52);
-const FACE_DEFAULT = { skin: 1, hair: 'manbun', hcol: 7, beard: 'none', eye: 0 };
-const FACE_AI = { skin: 'ai', hair: 'quiff', hcol: 0, beard: 'goatee' };
+const FACE_DEFAULT = { skin: 1, hair: 'manbun', hcol: 7, bcol: 7, beard: 'none', eye: 0 };
+const FACE_AI = { skin: 'ai', hair: 'quiff', hcol: 0, bcol: 0, beard: 'goatee' };
 let faceCfg = Object.assign({}, FACE_DEFAULT);
 let faceEdit = false, faceCamAng = Math.PI;
 const _faceQ = new THREE.Quaternion(), _faceD = new THREE.Vector3();
-try { const sv = JSON.parse(localStorage.getItem('hoopvlone-face-v2') || 'null'); if (sv && typeof sv === 'object') faceCfg = Object.assign(faceCfg, sv); } catch (e) {}
+try { const sv = JSON.parse(localStorage.getItem('hoopvlone-face-v2') || 'null'); if (sv && typeof sv === 'object') { faceCfg = Object.assign(faceCfg, sv); if (sv.bcol == null) faceCfg.bcol = faceCfg.hcol; } } catch (e) {}
 
 function applyFace(m, c) {
   const F = m && m.userData && m.userData.face;
@@ -2382,17 +2681,22 @@ function applyFace(m, c) {
   const sk = c.skin === 'ai' ? [0x9e7660, 0x7d5a46] : (FACE_SKINS[c.skin] || FACE_SKINS[0]).slice(1);
   F.mSkin.color.setHex(sk[0]); F.mSkinDark.color.setHex(sk[1]);
   for (const k of [F.mSkin, F.mSkinDark]) if (k.emissive) k.emissive.copy(k.color).multiplyScalar(0.07);
-  F.mHair.color.setHex((FACE_HAIR[c.hcol] || FACE_HAIR[0])[1]);
+  const hairHex = (FACE_HAIR[c.hcol] || FACE_HAIR[0])[1];
+  const beardHex = (FACE_HAIR[c.bcol != null ? c.bcol : c.hcol] || FACE_HAIR[0])[1];
+  F.mHair.color.setHex(hairHex);
+  if (F.mHairShell) F.mHairShell.color.setHex(hairHex);
+  if (F.mBeard) F.mBeard.color.setHex(beardHex);
+  if (F.mStubble) F.mStubble.color.setHex(beardHex);
   if (F.paintEye && c.eye != null && FACE_EYES[c.eye]) F.paintEye(FACE_EYES[c.eye][1]);
   if (F.mLip) F.mLip.color.copy(F.mSkin.color).lerp(_lipTint, 0.42).multiplyScalar(0.92);
-  F.cap.visible = c.hair !== 'bald';
+  if (F.cap) F.cap.visible = c.hair !== 'bald';
   for (const k in F.hairSets) F.hairSets[k].visible = k === c.hair;
   for (const k in F.beardSets) F.beardSets[k].visible = k === c.beard;
 }
 applyFace(mP, faceCfg);
 applyFace(mA, FACE_AI);
-applyFace(mTM, { skin: 4, hair: 'twists', hcol: 0, beard: 'short', eye: 1 });
-applyFace(mA2, { skin: 'ai', hair: 'short', hcol: 1, beard: 'none' });
+applyFace(mTM, { skin: 4, hair: 'twists', hcol: 0, bcol: 0, beard: 'short', eye: 1 });
+applyFace(mA2, { skin: 'ai', hair: 'fade', hcol: 1, bcol: 1, beard: 'stubble' });
 
 (function buildFaceEditor() {
   const css = document.createElement('style');
@@ -2405,7 +2709,8 @@ applyFace(mA2, { skin: 'ai', hair: 'short', hcol: 1, beard: 'none' });
   const pn = document.createElement('div'); pn.id = 'face-panel';
   pn.innerHTML = "<h3>🧑 PERSONALIZAR ROSTO</h3><div style='opacity:.7'>As mudanças aparecem na hora no boneco.</div>" +
     "<h4>COR DA PELE</h4><div class='row' id='fp-skin'></div><h4>CABELO</h4><div class='row' id='fp-hair'></div>" +
-    "<h4>COR DO CABELO / BARBA</h4><div class='row' id='fp-hcol'></div><h4>BARBA</h4><div class='row' id='fp-beard'></div>" +
+    "<h4>COR DO CABELO</h4><div class='row' id='fp-hcol'></div><h4>BARBA</h4><div class='row' id='fp-beard'></div>" +
+    "<h4>COR DA BARBA</h4><div class='row' id='fp-bcol'></div>" +
     "<h4>COR DOS OLHOS</h4><div class='row' id='fp-eye'></div><h4>GIRAR CÂMERA</h4><input type='range' id='fp-rot' min='0' max='360' value='180'><button class='done' id='fp-done'>✔ SALVAR E VOLTAR</button>";
   document.body.appendChild(pn);
   const hex = n => '#' + n.toString(16).padStart(6, '0');
@@ -2423,6 +2728,7 @@ applyFace(mA2, { skin: 'ai', hair: 'short', hcol: 1, beard: 'none' });
     fill('#fp-skin', FACE_SKINS, 'skin', { cls: 'sw', val: (it, i) => i, paint: (b, it) => { b.style.background = hex(it[1]); b.title = it[0]; } });
     fill('#fp-hair', FACE_HAIR_STYLES, 'hair', { cls: 'chip', val: it => it[0], paint: (b, it) => { b.textContent = it[1]; } });
     fill('#fp-hcol', FACE_HAIR, 'hcol', { cls: 'sw', val: (it, i) => i, paint: (b, it) => { b.style.background = hex(it[1]); b.title = it[0]; } });
+    fill('#fp-bcol', FACE_HAIR, 'bcol', { cls: 'sw', val: (it, i) => i, paint: (b, it) => { b.style.background = hex(it[1]); b.title = it[0]; } });
     fill('#fp-eye', FACE_EYES, 'eye', { cls: 'sw', val: (it, i) => i, paint: (b, it) => { b.style.background = hex(it[1]); b.title = it[0]; } });
     fill('#fp-beard', FACE_BEARDS, 'beard', { cls: 'chip', val: it => it[0], paint: (b, it) => { b.textContent = it[1]; } });
   }
@@ -4181,7 +4487,7 @@ function handleRimAndBackboardPhysics(dt) {
         B.vy = 14;
         B.vz = Math.min(-65, B.vz * 0.55);
         B.s = 'dead';
-        deadT = MODE === 'train' ? 1.0 : 3.8;
+        deadT = MODE === 'train' ? 1.0 : 2.6;
         nextP = MODE === 'train' ? 'p' : (scorer === 'p' ? 'a' : 'p');
         const replayTitle = wasDunk
           ? 'SLAM DUNK EXPLOSIVO!'
@@ -4301,7 +4607,7 @@ function humanControlStep(dt) {
   }
 
   if (charge) {
-    charge.t = Math.min(charge.t + dt / 0.55, 1.15);
+    charge.t = Math.min(charge.t + dt / (0.55 * GAME_SPEED), 1.15); // medidor de arremesso segue em tempo real
     if (charge.t >= 1.15) {
       const t = charge.t;
       charge = null;
@@ -4497,7 +4803,7 @@ function updatePhysicsStep(dt) {
     const speedMult = (progress > 0.52 && progress < 0.86) ? 0.42 : 0.92;
     $('replay-speed').textContent = speedMult < 0.6 ? 'CÂMERA 2K • SLOW MOTION 0.4X' : 'CÂMERA DE TRANSMISSÃO • 1.0X';
 
-    replayState.cursor += dt * 60 * speedMult;
+    replayState.cursor += (dt / GAME_SPEED) * 60 * speedMult; // replay em velocidade normal
     if (replayState.cursor >= total - 1) {
       stopReplayAndContinue();
     }
@@ -4672,7 +4978,7 @@ function updatePhysicsStep(dt) {
     o.v = damp(o.v, o.mv ? o.sp : 0, 14, dt);
     // Avanço de fase da passada (o.ph) 100% acoplado à distância real percorrida no solo (elimina patinação/moonwalk)
     if (o.v > 5 && o.dunk <= 0 && o.layup <= 0 && o.block <= 0) {
-      o.ph += dt * ((o.v * s) / 0.46);
+      o.ph += dt * ((o.v * s) / 0.52);
     }
     const dribFreq = (o.cx > 0 || o.sd > 0 || o.bb > 0 || o.sb > 0) ? 2.55 : (o.dr ? 2.25 : 1.55 + (o.v / 228) * 1.85);
     o.bp = (o.bp || 0) + dt * dribFreq;
@@ -4867,6 +5173,8 @@ function syncBiomechanics(o, m, dt, t) {
   const hasB = B.s === 'held' && B.owner === o;
   const def = poss && ((poss === 'p') !== (teamOf(o) === 'p'));
   const amp = cl(o.v / 165, 0, 1.12);
+  const runK = smoothstep((o.v - 60) / 115);   // 0 = andando, 1 = correndo
+  const sprK = smoothstep((o.v - 150) / 85);   // 0..1 = sprint
   const ph = o.ph;
   const z = o.z;
 
@@ -4970,7 +5278,10 @@ function syncBiomechanics(o, m, dt, t) {
   const targetCrouch = (def || dr) ? 1.0 : (hasB ? 0.62 : 0.18);
   o.cr = damp(o.cr, targetCrouch, 10, dt);
   const stanceDip = o.cr * (dr ? 0.11 : (def ? 0.13 : 0.09)) + cxs * 0.13 + sds * 0.11 + bbs * 0.09 + legArr * 0.15 + stopDip + pivotDip + burstDip;
-  const gaitBob = (jumpY <= 0.01) ? Math.abs(Math.sin(ph)) * 0.044 * amp - 0.018 * amp : 0;
+  // quique: na caminhada o quadril sobe no apoio (arco invertido); na corrida desce no apoio (mola) e sobe na fase de voo
+  const gaitBob = (jumpY <= 0.01)
+    ? lerp((1 - Math.abs(Math.sin(ph))) * 0.020 - 0.010, Math.abs(Math.sin(ph)) * 0.060 * (1 + 0.4 * sprK) - 0.027, runK) * amp
+    : 0;
 
   // Fator de transição suave para quando o boneco está parado ou se movendo devagar (1 = parado, 0 = correndo)
   const isActionLocked = isCelebrating || isGathering || isShooting || o.dunk > 0 || o.layup > 0 || o.block > 0 || o.steal > 0;
@@ -5027,17 +5338,17 @@ function syncBiomechanics(o, m, dt, t) {
 
   const breatheWave = o.exhausted ? Math.sin(t * 7.5) * 0.016 : Math.sin(t * 2.4 + pSeed) * 0.006;
   const totalDip = cl(-crouchOffset + stanceDip + landDip + (o.exhausted ? 0.06 : 0), 0, 0.30);
-  pelvis.position.y = T('pelY', 0.94 - totalDip + gaitBob + breatheWave + roleBobY, 18);
+  pelvis.position.y = T('pelY', 0.94 - totalDip + gaitBob + breatheWave + roleBobY, 18 + 38 * runK);
 
   const accelFwd = cl((o.ax * sinY + o.ay * cosY) / 850, -0.26, 0.30);
   const accelLat = cl((-o.ax * cosY + o.ay * sinY) / 850, -0.24, 0.24);
 
   const exhaustedLean = o.exhausted ? 0.14 : 0;
   // Inclinação física natural com momento linear, arranque (burst), frenagem (stop) e força centrípeta nas curvas (turnVel)
-  let targetPelvisRx = localFwd * 0.13 + accelFwd * 0.36 + o.cr * 0.10 + sbPelvis + landDip * 0.45 + burstDip * 0.90 + exhaustedLean * 0.5;
-  let targetChestRx = localFwd * 0.16 + accelFwd * 0.44 + o.cr * (dr ? 0.18 : 0.12) + sbChest + landDip * 0.42 + burstDip * 1.15 + pivotDip * 0.65 + exhaustedLean;
-  let targetPelvisRz = -localRight * 0.11 - accelLat * 0.32 - turnVel * 0.08 * amp + (o.cx > 0 ? -o.hand * 0.18 * cxs : 0);
-  let targetChestRy = -strideWave * 0.22 + turnVel * 0.14 + (o.bb > 0 ? bbs * 0.40 * o.bdir : 0) + (o.cx > 0 ? o.hand * 0.20 * cxs - o.hand * 0.26 * Math.sin(Math.PI * cl(cxp / 0.38, 0, 1)) : 0) + (o.sd > 0 ? -o.sdir * 0.18 * sds : 0);
+  let targetPelvisRx = localFwd * 0.13 + sprK * 0.05 * cl(localFwd, 0, 1) + accelFwd * 0.36 + o.cr * 0.10 + sbPelvis + landDip * 0.45 + burstDip * 0.90 + exhaustedLean * 0.5;
+  let targetChestRx = localFwd * 0.16 + sprK * 0.09 * cl(localFwd, 0, 1) + accelFwd * 0.44 + o.cr * (dr ? 0.18 : 0.12) + sbChest + landDip * 0.42 + burstDip * 1.15 + pivotDip * 0.65 + exhaustedLean;
+  let targetPelvisRz = (isActionLocked ? 0 : Math.cos(ph) * 0.05 * amp) - localRight * 0.11 - accelLat * 0.32 - turnVel * 0.08 * amp + (o.cx > 0 ? -o.hand * 0.18 * cxs : 0);
+  let targetChestRy = -strideWave * (0.22 + 0.16 * runK) + turnVel * 0.14 + (o.bb > 0 ? bbs * 0.40 * o.bdir : 0) + (o.cx > 0 ? o.hand * 0.20 * cxs - o.hand * 0.26 * Math.sin(Math.PI * cl(cxp / 0.38, 0, 1)) : 0) + (o.sd > 0 ? -o.sdir * 0.18 * sds : 0);
 
   // Postura dinâmica do tronco conforme o papel do jogador em quadra (mesmo parado)
   if (!isActionLocked) {
@@ -5113,15 +5424,15 @@ function syncBiomechanics(o, m, dt, t) {
   }
 
   pelvis.rotation.x = T('pelRx', targetPelvisRx, 15);
-  pelvis.rotation.y = T('pelRy', strideWave * 0.14 - localRight * 0.18 + (isCelebrating ? 0.12 : 0), 15);
-  pelvis.rotation.z = T('pelRz', targetPelvisRz, 15);
+  pelvis.rotation.y = T('pelRy', strideWave * (0.14 + 0.07 * runK) - localRight * 0.18 + (isCelebrating ? 0.12 : 0), 15 + 22 * runK);
+  pelvis.rotation.z = T('pelRz', targetPelvisRz, 15 + 20 * runK);
 
   waist.rotation.x = T('wstRx', targetChestRx * 0.45, 15);
-  waist.rotation.y = T('wstRy', targetChestRy * 0.45, 15);
+  waist.rotation.y = T('wstRy', targetChestRy * 0.45, 15 + 22 * runK);
   waist.rotation.z = T('wstRz', targetPelvisRz * 0.38, 15);
 
   ch.rotation.x = T('chtRx', targetChestRx * 0.55, 15);
-  ch.rotation.y = T('chtRy', targetChestRy * 0.55, 15);
+  ch.rotation.y = T('chtRy', targetChestRy * 0.55, 15 + 22 * runK);
   ch.rotation.z = T('chtRz', (o.sd > 0 ? sds * 0.14 * o.sdir : (isCelebrating ? -0.04 : -turnVel * 0.06 * amp)), 15);
 
   const totalSpineRx = pelvis.rotation.x + waist.rotation.x + ch.rotation.x;
@@ -5141,6 +5452,7 @@ function syncBiomechanics(o, m, dt, t) {
   let hipL_z = 0.03 + o.cr * 0.09, hipR_z = -0.03 - o.cr * 0.09;
   let kneeL_x = baseKneeBend, kneeR_x = baseKneeBend;
   let ankleL_x = -baseKneeBend * 0.45, ankleR_x = -baseKneeBend * 0.45;
+  let ankXL = 0, ankXR = 0;
   if (o.dunk > 0) {
     const dp = 1 - o.dunk / 0.96;
     if (dp >= 0.16 && dp < 0.85) {
@@ -5224,14 +5536,27 @@ function syncBiomechanics(o, m, dt, t) {
     const latWeight = cl(Math.abs(localRight) * 1.35, 0, 1);
     const fwdWeight = 1 - latWeight * 0.55;
 
-    const legSwing = Math.sin(ph) * 0.82 * amp * dirSign * fwdWeight;
-    const kneeLiftL = Math.max(0, -Math.sin(ph + 1.15 * dirSign)) * 1.12 * amp * fwdWeight;
-    const kneeLiftR = Math.max(0, Math.sin(ph + 1.15 * dirSign)) * 1.12 * amp * fwdWeight;
-
-    hipL_x += legSwing;
-    hipR_x -= legSwing;
-    kneeL_x += kneeLiftL;
-    kneeR_x += kneeLiftR;
+    // Ciclo de passada: fase de apoio (cos>0: pé no chão indo do contato à impulsão) e de balanço (cos<0: perna recuperando)
+    const gaitA = cl(amp, 0, 1) * fwdWeight;
+    const gaitS = cl(amp * 1.25, 0, 1) * fwdWeight;
+    const hipBack = 0.40 + 0.20 * runK;                          // extensão do quadril (menor)
+    const hipFwd = 0.50 + 0.48 * runK + 0.14 * sprK;             // flexão do quadril (maior: joelho sobe)
+    const swingK = (0.85 + 0.62 * runK + 0.22 * sprK) * gaitS;   // flexão do joelho no balanço (calcanhar sobe)
+    const stanceK = (0.14 + 0.30 * runK) * gaitS;                // amortecimento do joelho no apoio
+    const legCycle = th => {
+      const sn = Math.sin(th), cs = Math.cos(th);
+      const swingF = Math.max(0, -cs);
+      const hip = (sn > 0 ? sn * hipBack : sn * hipFwd) * gaitA * dirSign;
+      const knee = swingF * swingK + Math.max(0, cs) * stanceK;
+      // tornozelo: planta na impulsão, dorsiflexão no balanço e no contato do calcanhar (caminhada)
+      const ank = Math.max(0, sn - 0.35) / 0.65 * (0.35 + 0.35 * runK) * gaitA - swingF * 0.30 * gaitS - Math.max(0, -sn) * 0.18 * (1 - runK) * gaitS;
+      return [hip, knee, ank, swingF];
+    };
+    const [hpL, knL, anL, swL] = legCycle(ph), [hpR, knR, anR, swR] = legCycle(ph + Math.PI);
+    hipL_x += hpL; hipR_x += hpR;
+    kneeL_x += knL; kneeR_x += knR;
+    ankXL = anL; ankXR = anR;
+    hipL_z -= swL * 0.05 * runK * gaitA; hipR_z += swR * 0.05 * runK * gaitA; // na corrida os pés passam mais perto da linha central
 
     // Passada lateral real (Defensive Slide / Lateral Shuffle) quando se desloca para os lados
     const strafeAbduct = Math.abs(localRight) * 0.26;
@@ -5290,16 +5615,18 @@ function syncBiomechanics(o, m, dt, t) {
       }
     }
 
-    ankleL_x = -hipL_x * 0.55 - kneeL_x * 0.42 - pelvis.rotation.x * 0.5;
-    ankleR_x = -hipR_x * 0.55 - kneeR_x * 0.42 - pelvis.rotation.x * 0.5;
+    ankleL_x = -hipL_x * 0.55 - kneeL_x * 0.42 - pelvis.rotation.x * 0.5 + ankXL;
+    ankleR_x = -hipR_x * 0.55 - kneeR_x * 0.42 - pelvis.rotation.x * 0.5 + ankXR;
   }
 
-  m.tL.rotation.set(T('hipLx', hipL_x, 18), T('hipLy', hipL_y, 16), T('hipLz', hipL_z, 16));
-  m.tR.rotation.set(T('hipRx', hipR_x, 18), T('hipRy', hipR_y, 16), T('hipRz', hipR_z, 16));
-  m.tL.kn.rotation.x = T('kneeLx', kneeL_x, 20);
-  m.tR.kn.rotation.x = T('kneeRx', kneeR_x, 20);
-  m.tL.kn.ft.rotation.x = T('ankLx', ankleL_x, 20);
-  m.tR.kn.ft.rotation.x = T('ankRx', ankleR_x, 20);
+  // resposta mais rápida na corrida para a perna acompanhar o ciclo sem perder amplitude nem atrasar
+  const legSp = 18 + 32 * runK;
+  m.tL.rotation.set(T('hipLx', hipL_x, legSp), T('hipLy', hipL_y, 16 + 14 * runK), T('hipLz', hipL_z, 16 + 14 * runK));
+  m.tR.rotation.set(T('hipRx', hipR_x, legSp), T('hipRy', hipR_y, 16 + 14 * runK), T('hipRz', hipR_z, 16 + 14 * runK));
+  m.tL.kn.rotation.x = T('kneeLx', kneeL_x, legSp + 2);
+  m.tR.kn.rotation.x = T('kneeRx', kneeR_x, legSp + 2);
+  m.tL.kn.ft.rotation.x = T('ankLx', ankleL_x, legSp + 2);
+  m.tR.kn.ft.rotation.x = T('ankRx', ankleR_x, legSp + 2);
 
   let aL_x = -0.12, aR_x = -0.12;
   let aL_y = 0, aR_y = 0;
@@ -5695,16 +6022,21 @@ function syncBiomechanics(o, m, dt, t) {
     handMode = 'def_active';
   } else {
     // SEM BOLA (OFF-BALL READY POSE): braços semiflexionados prontos para jogo com balanço lento quando parado
-    const armSwing = Math.sin(ph) * 0.74 * amp;
+    // Braços opostos às pernas: balanço maior para frente que para trás, cotovelo ~90° na corrida e fechando mais no avanço
+    const snA = Math.sin(ph), armG = cl(amp, 0, 1.1), mvK = cl(amp * 1.2, 0, 1);
+    const armFw = 0.55 + 0.50 * runK + 0.15 * sprK, armBk = 0.34 + 0.30 * runK;
+    const fL = (snA > 0 ? snA * armFw : snA * armBk) * armG;
+    const fR = (-snA > 0 ? -snA * armFw : -snA * armBk) * armG;
     const idleArmWave = Math.sin(t * 1.90 + pSeed) * 0.07 * idleFactor;
-    aL_x = lerp(-0.12, -0.24, idleFactor) - armSwing + idleArmWave;
-    aR_x = lerp(-0.12, -0.28, idleFactor) + armSwing - idleArmWave;
-    aL_z = 0.12 + offPulse * 0.05 * idleFactor;
-    aR_z = -0.12 - offPulse * 0.05 * idleFactor;
+    aL_x = lerp(-0.12, -0.24, idleFactor) - fL + idleArmWave;
+    aR_x = lerp(-0.12, -0.28, idleFactor) - fR - idleArmWave;
+    aL_z = 0.12 + offPulse * 0.05 * idleFactor - runK * 0.12 * Math.max(0, snA) * armG;
+    aR_z = -0.12 - offPulse * 0.05 * idleFactor + runK * 0.12 * Math.max(0, -snA) * armG;
     aL_y = 0.12 * idleFactor;
     aR_y = -0.12 * idleFactor;
-    eL_x = lerp(0.56 + offPulse * 0.08, 0.38 + 0.60 * amp, cl(amp * 1.2, 0, 1));
-    eR_x = lerp(0.60 + offPulse * 0.08, 0.38 + 0.60 * amp, cl(amp * 1.2, 0, 1));
+    const eMove = lerp(0.34 + 0.34 * amp, 1.28 + 0.16 * sprK, runK);
+    eL_x = lerp(0.56 + offPulse * 0.08, eMove, mvK) + 0.30 * runK * snA * mvK;
+    eR_x = lerp(0.60 + offPulse * 0.08, eMove, mvK) - 0.30 * runK * snA * mvK;
     wL_x = -0.10;
     wR_x = -0.10;
     wL_y = -0.18;
@@ -5714,8 +6046,8 @@ function syncBiomechanics(o, m, dt, t) {
     }
   }
 
-  m.aL.rotation.set(T('shdLx', aL_x, 18), T('shdLy', aL_y, 16), T('shdLz', aL_z, 16));
-  m.aR.rotation.set(T('shdRx', aR_x, 18), T('shdRy', aR_y, 16), T('shdRz', aR_z, 16));
+  m.aL.rotation.set(T('shdLx', aL_x, 18 + 26 * runK), T('shdLy', aL_y, 16 + 16 * runK), T('shdLz', aL_z, 16 + 16 * runK));
+  m.aR.rotation.set(T('shdRx', aR_x, 18 + 26 * runK), T('shdRy', aR_y, 16 + 16 * runK), T('shdRz', aR_z, 16 + 16 * runK));
 
   // Mola amortecida (segunda ordem): dá inércia e leve "follow-through" às articulações distais
   const SPR = (key, target, w, zt) => {
@@ -6332,7 +6664,7 @@ let accumulator = 0;
 function loop(now) {
   const frameDt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
-  accumulator += frameDt;
+  accumulator += frameDt * GAME_SPEED;
 
   while (accumulator >= FIXED_DT) {
     updatePhysicsStep(FIXED_DT);
@@ -6355,7 +6687,7 @@ requestAnimationFrame(loop);
    ============================================================================ */
 (function () {
   const KEY = 'hoop_vlone_settings_v2';
-  const cfg = { mode: 'auto', sens: 1, size: 1, res: 55, fx: true };
+  const cfg = { mode: 'auto', sens: 1, size: 1, res: 55, fx: true, mb: 0 };
   try { Object.assign(cfg, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
   cfg.res = cl(Number(cfg.res) || 100, 25, 100);
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch (e) {} };
@@ -6426,6 +6758,13 @@ requestAnimationFrame(loop);
   };
   document.querySelectorAll('#cfg-fx button').forEach(b => b.onclick = () => { cfg.fx = b.dataset.f === '1'; save(); applyFx(); });
   applyFx();
+  const applyMb = () => {
+    cfg.mb = cl(Number(cfg.mb) || 0, 0, 0.9);
+    document.querySelectorAll('#cfg-mb button').forEach(b => b.classList.toggle('on', Math.abs(+b.dataset.mb - cfg.mb) < 0.01));
+    if (typeof setMotionBlur === 'function') setMotionBlur(cfg.mb);
+  };
+  document.querySelectorAll('#cfg-mb button').forEach(b => b.onclick = () => { cfg.mb = +b.dataset.mb; save(); applyMb(); });
+  applyMb();
   const toggleCfgPanel = () => {
     const o = panel.style.display !== 'block';
     panel.style.display = o ? 'block' : 'none';
