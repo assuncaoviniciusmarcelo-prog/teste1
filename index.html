@@ -3513,12 +3513,32 @@ function netClose() {
 
 // Servidores ICE: o TURN gratuito do PeerJS foi encerrado, então usamos vários STUN.
 // Para redes restritivas (4G/CGNAT), defina um TURN próprio:  window.HOOP_TURN = { urls: 'turn:...', username: '...', credential: '...' }
+let NET_TURN = [], NET_TURN_DONE = false, NET_TURN_P = null;
+function netLoadTurn() {
+  // no deploy (http/https) pede credenciais TURN ao /api/turn; sem TURN configurado, segue só com STUN
+  NET_TURN_P = new Promise(res => {
+    const done = () => { NET_TURN_DONE = true; res(); };
+    try {
+      if (location.protocol !== 'http:' && location.protocol !== 'https:') return done();
+      const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 4000);
+      fetch('/api/turn', { cache: 'no-store', signal: ctl.signal })
+        .then(r => (r.ok ? r.json() : null))
+        .then(j => { if (j && Array.isArray(j.iceServers)) NET_TURN = j.iceServers; })
+        .catch(() => {})
+        .then(() => { clearTimeout(to); done(); });
+    } catch (e) { done(); }
+  });
+  return NET_TURN_P;
+}
+netLoadTurn();
+setInterval(() => { NET_TURN_DONE = false; netLoadTurn(); }, 20 * 60 * 1000);
+
 function netPeerOpts() {
   const ice = [
     { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:global.stun.twilio.com:3478' }
   ];
-  try { if (window.HOOP_TURN) ice.push(...[].concat(window.HOOP_TURN)); } catch (e) {}
+  try { if (NET_TURN.length) ice.push(...NET_TURN); if (window.HOOP_TURN) ice.push(...[].concat(window.HOOP_TURN)); } catch (e) {}
   return { config: { iceServers: ice, sdpSemantics: 'unified-plan' }, debug: 1 };
 }
 function netErrText(e) {
@@ -3536,7 +3556,7 @@ function netErrText(e) {
   };
   return m[t] || ('ERRO: ' + t);
 }
-const NET_FAIL_TEXT = 'NÃO CONECTOU (REDE/NAT BLOQUEIA P2P) — TENTE WI-FI, OUTRA REDE OU CONFIGURE UM TURN';
+const NET_FAIL_TEXT = 'NÃO CONECTOU (REDE/NAT BLOQUEIA P2P) — TENTE WI-FI OU OUTRA REDE (VEJA O README: TURN)';
 
 function netWatchConn(c, role) {
   // o PeerJS avisa quando o caminho P2P (ICE) falha — comum em 4G/CGNAT sem servidor TURN
@@ -3545,6 +3565,7 @@ function netWatchConn(c, role) {
 }
 
 function netHost() {
+  if (!NET_TURN_DONE) { netStatus('PREPARANDO CONEXÃO...'); NET_TURN_P.then(() => netHost()); return; }
   if (typeof Peer === 'undefined') { netStatus('SEM CONEXÃO COM O SERVIDOR DE SALAS (PEERJS NÃO CARREGOU)'); return; }
   if (MODE === 'train') setMode('1v1');
   netClose();
@@ -3569,6 +3590,7 @@ function netHost() {
 }
 
 function netJoin() {
+  if (!NET_TURN_DONE) { netStatus('PREPARANDO CONEXÃO...'); NET_TURN_P.then(() => netJoin()); return; }
   if (typeof Peer === 'undefined') { netStatus('SEM CONEXÃO COM O SERVIDOR DE SALAS (PEERJS NÃO CARREGOU)'); return; }
   const code = (document.getElementById('net-code').value || '').trim().toUpperCase();
   if (code.length < 3) { netStatus('DIGITE O CÓDIGO DA SALA'); return; }
