@@ -673,6 +673,24 @@ body.mobile, body.mobile canvas { touch-action: none; }
 #cfg-panel .act { width: 100%; margin-top: 2px; }
 #cfg-panel input[type=range] { width: 100%; accent-color: #6D001A; }
 #cfg-panel small { display: block; color: rgba(255,255,255,.6); font-size: 11px; margin-top: 4px; }
+.cfg-tabs {
+  display: flex; gap: 6px; margin: 0 0 14px;
+  background: rgba(0, 0, 0, 0.45); padding: 4px;
+  border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.cfg-tab-btn {
+  flex: 1; padding: 7px 6px; border-radius: 7px;
+  border: 1px solid transparent; background: transparent;
+  color: rgba(255, 255, 255, 0.7); font: 700 12px var(--font, 'Figtree', system-ui);
+  letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+  transition: all 0.15s ease;
+}
+.cfg-tab-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
+.cfg-tab-btn.on {
+  background: linear-gradient(180deg, #8f0b27 0%, #6D001A 60%, #450010 100%);
+  color: #fff; border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 2px 8px rgba(109, 0, 26, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
 
 /* ---------- Aviso para girar o celular ---------- */
 #rotate-overlay {
@@ -884,6 +902,7 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
   <div class="key-hint"><span class="key-badge">B</span> Esqueleto 3D</div>
   <div class="key-hint"><span class="key-badge">R</span> Reiniciar</div>
   <div class="key-hint"><span class="key-badge">M</span> Som</div>
+  <div class="key-hint"><span class="key-badge">N</span> Beat</div>
   <div class="key-hint"><span class="key-badge">H</span> Ocultar</div>
   <button id="btn-hide-controls" class="btn-toggle-ctrl" onclick="toggleControls(false)" title="Ocultar barra de controles (H)">✕</button>
 </div>
@@ -906,49 +925,80 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
 <button id="cfg-btn" title="Configurações">⚙</button>
 <div id="cfg-panel">
   <h3><span>Configurações</span><button id="cfg-close" style="background:none;border:0;color:#94a3b8;font-size:18px;cursor:pointer;">✕</button></h3>
-  <div class="row" id="cfg-row-res">
-    <label>Resolução: <span id="cfg-res-label" style="color:#ffffff">100%</span></label>
-    <input type="range" id="cfg-res" min="20" max="100" step="5" value="100" style="accent-color:#6D001A">
-    <small>Menos resolução = mais desempenho (pixels nítidos, sem borrar).</small>
+
+  <div class="cfg-tabs">
+    <button class="cfg-tab-btn on" id="btn-tab-game" data-tab="game">Geral</button>
+    <button class="cfg-tab-btn" id="btn-tab-audio" data-tab="audio">Áudio</button>
   </div>
-  <div class="row" id="cfg-row-fx">
-    <label>Visual (sombras + shader retrô)</label>
-    <div class="seg" id="cfg-fx"><button data-f="1">Ligado</button><button data-f="0">Desligado</button></div>
-    <small>Sombras em tempo real, tone mapping, dither pixelado e vinheta. Desligue se o jogo ficar pesado.</small>
-  </div>
-  <div class="row" id="cfg-row-mb">
-    <label>Motion blur (desfoque de movimento)</label>
-    <div class="seg" id="cfg-mb"><button data-mb="0">Desligado</button><button data-mb="0.45">Baixo</button><button data-mb="0.65">Médio</button><button data-mb="0.8">Alto</button></div>
-    <small>Rastro suave nos movimentos rápidos de câmera, jogadores e bola.</small>
-  </div>
-  <div class="row">
-    <label>Controles</label>
-    <div class="seg" id="cfg-mode">
-      <button data-m="auto">Automático</button>
-      <button data-m="pc">Computador</button>
-      <button data-m="mobile">Celular</button>
+
+  <div class="cfg-tab-content" id="cfg-tab-game">
+    <div class="row" id="cfg-row-res">
+      <label>Resolução: <span id="cfg-res-label" style="color:#ffffff">100%</span></label>
+      <input type="range" id="cfg-res" min="20" max="100" step="5" value="100" style="accent-color:#6D001A">
+      <small>Menos resolução = mais desempenho (pixels nítidos, sem borrar).</small>
     </div>
-    <small id="cfg-detect"></small>
+    <div class="row" id="cfg-row-fx">
+      <label>Visual (sombras + shader retrô)</label>
+      <div class="seg" id="cfg-fx"><button data-f="1">Ligado</button><button data-f="0">Desligado</button></div>
+      <small>Sombras em tempo real, tone mapping, dither pixelado e vinheta. Desligue se o jogo ficar pesado.</small>
+    </div>
+    <div class="row" id="cfg-row-mb">
+      <label>Motion blur (desfoque de movimento)</label>
+      <div class="seg" id="cfg-mb"><button data-mb="0">Desligado</button><button data-mb="0.45">Baixo</button><button data-mb="0.65">Médio</button><button data-mb="0.8">Alto</button></div>
+      <small>Rastro suave nos movimentos rápidos de câmera, jogadores e bola.</small>
+    </div>
+    <div class="row">
+      <label>Controles</label>
+      <div class="seg" id="cfg-mode">
+        <button data-m="auto">Automático</button>
+        <button data-m="pc">Computador</button>
+        <button data-m="mobile">Celular</button>
+      </div>
+      <small id="cfg-detect"></small>
+    </div>
+    <div class="row" id="cfg-row-sens">
+      <label>Sensibilidade da câmera (toque)</label>
+      <input type="range" id="cfg-sens" min="0.5" max="2" step="0.05">
+    </div>
+    <div class="row" id="cfg-row-size">
+      <label>Tamanho dos botões</label>
+      <input type="range" id="cfg-size" min="0.8" max="1.3" step="0.05">
+    </div>
+    <div class="row">
+      <button class="act" id="cfg-full">Tela cheia (horizontal)</button>
+    </div>
+    <div class="row">
+      <a class="act" href="https://open.spotify.com/playlist/5RGljA8YyaKCIfSM0p67E4?si=780caa3be62b4417" target="_blank" rel="noopener noreferrer">♪ Trilha sonora ↗</a>
+    </div>
+    <div class="row">
+      <button class="act" id="cfg-reset">Reiniciar partida</button>
+    </div>
+    <div class="row" style="margin-bottom:0">
+      <button class="act" id="cfg-menu">Voltar ao menu</button>
+    </div>
   </div>
-  <div class="row" id="cfg-row-sens">
-    <label>Sensibilidade da câmera (toque)</label>
-    <input type="range" id="cfg-sens" min="0.5" max="2" step="0.05">
-  </div>
-  <div class="row" id="cfg-row-size">
-    <label>Tamanho dos botões</label>
-    <input type="range" id="cfg-size" min="0.8" max="1.3" step="0.05">
-  </div>
-  <div class="row">
-    <button class="act" id="cfg-full">Tela cheia (horizontal)</button>
-  </div>
-  <div class="row">
-    <a class="act" href="https://open.spotify.com/playlist/5RGljA8YyaKCIfSM0p67E4?si=780caa3be62b4417" target="_blank" rel="noopener noreferrer">♪ Trilha sonora ↗</a>
-  </div>
-  <div class="row">
-    <button class="act" id="cfg-reset">Reiniciar partida</button>
-  </div>
-  <div class="row" style="margin-bottom:0">
-    <button class="act" id="cfg-menu">Voltar ao menu</button>
+
+  <div class="cfg-tab-content" id="cfg-tab-audio" style="display:none">
+    <div class="row" id="cfg-row-vol-ball">
+      <label>Volume da Bola: <span id="cfg-vol-ball-val" style="color:#ffffff">80%</span></label>
+      <input type="range" id="cfg-vol-ball" min="0" max="100" step="5" value="80" style="accent-color:#6D001A">
+      <small>Quique na quadra, impacto na tabela, aro e cesta.</small>
+    </div>
+    <div class="row" id="cfg-row-vol-shoes">
+      <label>Volume do Tênis: <span id="cfg-vol-shoes-val" style="color:#ffffff">60%</span></label>
+      <input type="range" id="cfg-vol-shoes" min="0" max="100" step="5" value="60" style="accent-color:#6D001A">
+      <small>Atrito da borracha no piso e cortes rápidos de direção.</small>
+    </div>
+    <div class="row" id="cfg-row-vol-music">
+      <label>Volume da Música: <span id="cfg-vol-music-val" style="color:#ffffff">70%</span></label>
+      <input type="range" id="cfg-vol-music" min="0" max="100" step="5" value="70" style="accent-color:#6D001A">
+      <small>Beat Boom Bap Lo-Fi instrumental procedural.</small>
+    </div>
+    <div class="row" id="cfg-row-beat">
+      <label>Estado do Beat</label>
+      <div class="seg" id="cfg-beat"><button data-b="1" class="on">Ligado</button><button data-b="0">Desligado</button></div>
+      <small>Ative ou silencie o beat a qualquer momento (tecla N).</small>
+    </div>
   </div>
 </div>
 
@@ -1027,6 +1077,35 @@ class BasketballAudio {
     this.isMuted = false;
     this.masterGain = null;
     this._victoryPlayed = false;
+
+    // Volumes independentes dos sub-barramentos (persistidos no localStorage)
+    this.volBall = 0.8;
+    this.volShoes = 0.6;
+    this.volMusic = 0.7;
+    try {
+      const sb = localStorage.getItem('sh_vol_ball');
+      if (sb !== null) this.volBall = Math.max(0, Math.min(1, parseFloat(sb) || 0));
+      const ss = localStorage.getItem('sh_vol_shoes');
+      if (ss !== null) this.volShoes = Math.max(0, Math.min(1, parseFloat(ss) || 0));
+      const sm = localStorage.getItem('sh_vol_music');
+      if (sm !== null) this.volMusic = Math.max(0, Math.min(1, parseFloat(sm) || 0));
+    } catch (e) {}
+
+    this.ballGain = null;
+    this.shoesGain = null;
+
+    // Beat Boom-Bap Chillin Infinito (Lo-Fi Procedural)
+    let savedBeat = null;
+    try { savedBeat = localStorage.getItem('sh_beat'); } catch (e) {}
+    this.beatEnabled = savedBeat !== '0'; // Padrão: ativado
+    this.beatPlaying = false;
+    this.beatTimer = null;
+    this.beatStep = 0;
+    this.beatNextTime = 0;
+    this.beatBpm = 84;
+    this.beatSecondsPerStep = (60 / this.beatBpm) / 4; // ~0.1785s por semicorcheia (1/16)
+    this.beatGain = null;
+
     this._initContextOnUserGesture();
   }
 
@@ -1038,6 +1117,19 @@ class BasketballAudio {
       this.masterGain = this.ctx.createGain();
       this.masterGain.gain.setValueAtTime(0.85, this.ctx.currentTime);
       this.masterGain.connect(this.ctx.destination);
+
+      // Sub-barramentos de mixagem dedicados
+      this.ballGain = this.ctx.createGain();
+      this.ballGain.gain.setValueAtTime(this.volBall, this.ctx.currentTime);
+      this.ballGain.connect(this.masterGain);
+
+      this.shoesGain = this.ctx.createGain();
+      this.shoesGain.gain.setValueAtTime(this.volShoes, this.ctx.currentTime);
+      this.shoesGain.connect(this.masterGain);
+
+      this.beatGain = this.ctx.createGain();
+      this.beatGain.gain.setValueAtTime(this.volMusic * 0.44, this.ctx.currentTime);
+      this.beatGain.connect(this.masterGain);
     }
     if (this.ctx.state === 'suspended') {
       this.ctx.resume().catch(() => {});
@@ -1045,9 +1137,30 @@ class BasketballAudio {
     return this.ctx;
   }
 
+  setBallVolume(v) {
+    this.volBall = Math.max(0, Math.min(1, v));
+    try { localStorage.setItem('sh_vol_ball', this.volBall); } catch (e) {}
+    if (this.ballGain && this.ctx) this.ballGain.gain.setValueAtTime(this.volBall, this.ctx.currentTime);
+  }
+
+  setShoesVolume(v) {
+    this.volShoes = Math.max(0, Math.min(1, v));
+    try { localStorage.setItem('sh_vol_shoes', this.volShoes); } catch (e) {}
+    if (this.shoesGain && this.ctx) this.shoesGain.gain.setValueAtTime(this.volShoes, this.ctx.currentTime);
+  }
+
+  setMusicVolume(v) {
+    this.volMusic = Math.max(0, Math.min(1, v));
+    try { localStorage.setItem('sh_vol_music', this.volMusic); } catch (e) {}
+    if (this.beatGain && this.ctx) this.beatGain.gain.setValueAtTime(this.volMusic * 0.44, this.ctx.currentTime);
+  }
+
   _initContextOnUserGesture() {
     const unlock = () => {
       this._ensureContext();
+      if (this.beatEnabled && !this.beatPlaying) {
+        this.startBeat();
+      }
       for (const ev of ['click', 'keydown', 'touchstart', 'pointerdown']) {
         window.removeEventListener(ev, unlock, true);
       }
@@ -1069,49 +1182,377 @@ class BasketballAudio {
     this._victoryPlayed = false;
   }
 
+  /* ============================================================================
+     MOTOR DE REPRODUÇÃO DO BEAT BOOM BAP CHILLIN
+     ============================================================================ */
+  startBeat() {
+    const ctx = this._ensureContext();
+    if (!ctx || this.beatPlaying || !this.beatEnabled) return;
+    this.beatPlaying = true;
+    this.beatStep = 0;
+    this.beatNextTime = ctx.currentTime + 0.08;
+
+    if (this.beatTimer) clearInterval(this.beatTimer);
+    this.beatTimer = setInterval(() => {
+      this._schedulerTick();
+    }, 40);
+  }
+
+  stopBeat() {
+    this.beatPlaying = false;
+    if (this.beatTimer) {
+      clearInterval(this.beatTimer);
+      this.beatTimer = null;
+    }
+  }
+
+  setBeatEnabled(enabled) {
+    this.beatEnabled = !!enabled;
+    try { localStorage.setItem('sh_beat', this.beatEnabled ? '1' : '0'); } catch (e) {}
+    if (this.beatEnabled) {
+      this.startBeat();
+    } else {
+      this.stopBeat();
+    }
+    document.querySelectorAll('#cfg-beat button').forEach(b => {
+      b.classList.toggle('on', (b.dataset.b === '1') === this.beatEnabled);
+    });
+  }
+
+  toggleBeat() {
+    this.setBeatEnabled(!this.beatEnabled);
+    say(this.beatEnabled ? 'BEAT CHILLIN ATIVADO' : 'BEAT DESATIVADO', 1.0);
+  }
+
+  _schedulerTick() {
+    if (!this.ctx || !this.beatPlaying) return;
+    const scheduleAhead = 0.16;
+    while (this.beatNextTime < this.ctx.currentTime + scheduleAhead) {
+      this._playBeatStep(this.beatStep, this.beatNextTime);
+      const isSwing = (this.beatStep % 2 === 1);
+      const swingOffset = isSwing ? 0.022 : -0.022;
+      this.beatNextTime += this.beatSecondsPerStep + swingOffset;
+      this.beatStep = (this.beatStep + 1) % 64; // Loop de 4 compassos (64 passos)
+    }
+  }
+
+  _playBeatStep(step, time) {
+    if (!this.ctx) return;
+
+    // 1. Padrão de Bateria Boom-Bap
+    // Bumbo (Kick) clássico e espaçado
+    const kicks = [0, 10, 14, 16, 22, 26, 30, 32, 42, 46, 48, 54, 59, 62];
+    if (kicks.includes(step)) {
+      this._playBeatKick(time, step % 16 === 0 ? 1.0 : 0.85);
+    }
+
+    // Caixa (Snare): tempos 2 e 4 (passos 4 e 12) + ghost snares
+    const snares = [4, 12, 20, 28, 36, 44, 52, 60];
+    const ghostSnares = [9, 25, 41, 57];
+    if (snares.includes(step)) {
+      this._playBeatSnare(time, 0.92);
+    } else if (ghostSnares.includes(step)) {
+      this._playBeatSnare(time, 0.32, true);
+    }
+
+    // Chimbal (Hi-Hat)
+    if (step % 2 === 0) {
+      const isAccent = step % 4 === 0;
+      this._playBeatHat(time, isAccent ? 0.52 : 0.36, false);
+    }
+    if ([14, 30, 46, 62].includes(step)) {
+      this._playBeatHat(time, 0.45, true);
+    }
+
+    // 2. Acordes Nostálgicos Jazz / Lo-Fi (Rhodes Electric Piano)
+    // Progressão: Dm9 (bar 1) -> G13 (bar 2) -> Cmaj9 (bar 3) -> A7alt (bar 4)
+    if (step === 0) {
+      this._playBeatChord(time, [146.83, 174.61, 220.00, 261.63, 329.63], 1.8);
+      this._playBeatBass(time, 73.42, 1.6); // D2
+    } else if (step === 8) {
+      this._playBeatChord(time, [174.61, 220.00, 261.63, 329.63], 0.85, 0.55);
+    } else if (step === 16) {
+      this._playBeatChord(time, [98.00, 174.61, 246.94, 329.63, 392.00], 1.8);
+      this._playBeatBass(time, 49.00, 1.6); // G1
+    } else if (step === 24) {
+      this._playBeatChord(time, [174.61, 246.94, 329.63], 0.85, 0.55);
+    } else if (step === 32) {
+      this._playBeatChord(time, [130.81, 164.81, 196.00, 246.94, 293.66], 1.8);
+      this._playBeatBass(time, 65.41, 1.6); // C2
+    } else if (step === 40) {
+      this._playBeatChord(time, [164.81, 196.00, 246.94, 293.66], 0.85, 0.55);
+    } else if (step === 48) {
+      this._playBeatChord(time, [110.00, 196.00, 277.18, 349.23, 261.63], 1.8);
+      this._playBeatBass(time, 55.00, 1.6); // A1
+    } else if (step === 56) {
+      this._playBeatChord(time, [196.00, 277.18, 349.23], 0.85, 0.55);
+    }
+  }
+
+  _playBeatKick(time, vol = 1.0) {
+    const ctx = this.ctx;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(118, time);
+    osc.frequency.exponentialRampToValueAtTime(46, time + 0.085);
+
+    gain.gain.setValueAtTime(0.001, time);
+    gain.gain.linearRampToValueAtTime(0.72 * vol, time + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.16);
+
+    osc.connect(gain);
+    gain.connect(this.beatGain);
+    osc.start(time);
+    osc.stop(time + 0.17);
+    this._scheduleCleanup([osc, gain], 240);
+  }
+
+  _playBeatSnare(time, vol = 1.0, isGhost = false) {
+    const ctx = this.ctx;
+    const dur = isGhost ? 0.065 : 0.15;
+    const noiseLen = Math.floor(ctx.sampleRate * dur);
+    const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+    const data = noiseBuf.getChannelData(0);
+    for (let i = 0; i < noiseLen; i++) data[i] = Math.random() * 2 - 1;
+
+    const noiseSource = ctx.createBufferSource();
+    noiseSource.buffer = noiseBuf;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1650, time);
+    filter.Q.setValueAtTime(1.6, time);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.001, time);
+    gain.gain.linearRampToValueAtTime((isGhost ? 0.20 : 0.62) * vol, time + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
+
+    noiseSource.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.beatGain);
+
+    noiseSource.start(time);
+    noiseSource.stop(time + dur);
+
+    if (!isGhost) {
+      const snap = ctx.createOscillator();
+      const snapG = ctx.createGain();
+      snap.type = 'triangle';
+      snap.frequency.setValueAtTime(185, time);
+      snap.frequency.exponentialRampToValueAtTime(95, time + 0.04);
+      snapG.gain.setValueAtTime(0.32 * vol, time);
+      snapG.gain.exponentialRampToValueAtTime(0.001, time + 0.045);
+      snap.connect(snapG);
+      snapG.connect(this.beatGain);
+      snap.start(time);
+      snap.stop(time + 0.05);
+      this._scheduleCleanup([snap, snapG], 100);
+    }
+    this._scheduleCleanup([noiseSource, filter, gain], 220);
+  }
+
+  _playBeatHat(time, vol = 1.0, isOpen = false) {
+    const ctx = this.ctx;
+    const dur = isOpen ? 0.17 : 0.038;
+    const len = Math.floor(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.setValueAtTime(6800, time);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.001, time);
+    gain.gain.linearRampToValueAtTime((isOpen ? 0.30 : 0.22) * vol, time + 0.003);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
+
+    src.connect(hp);
+    hp.connect(gain);
+    gain.connect(this.beatGain);
+
+    src.start(time);
+    src.stop(time + dur);
+    this._scheduleCleanup([src, hp, gain], (dur + 0.05) * 1000);
+  }
+
+  _playBeatChord(time, freqs, duration = 1.6, vol = 1.0) {
+    const ctx = this.ctx;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1350, time);
+    filter.Q.setValueAtTime(1.2, time);
+
+    const chordGain = ctx.createGain();
+    chordGain.gain.setValueAtTime(0.001, time);
+    chordGain.gain.linearRampToValueAtTime(0.22 * vol, time + 0.025);
+    chordGain.gain.setValueAtTime(0.18 * vol, time + duration * 0.6);
+    chordGain.gain.exponentialRampToValueAtTime(0.001, time + duration);
+
+    filter.connect(chordGain);
+    chordGain.connect(this.beatGain);
+
+    const oscs = [];
+    freqs.forEach((freq) => {
+      const osc1 = ctx.createOscillator();
+      osc1.type = 'triangle';
+      osc1.frequency.setValueAtTime(freq * 0.999, time);
+
+      const osc2 = ctx.createOscillator();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(freq * 1.001, time);
+
+      const subGain = ctx.createGain();
+      subGain.gain.setValueAtTime(0.34 / freqs.length, time);
+
+      osc1.connect(subGain);
+      osc2.connect(subGain);
+      subGain.connect(filter);
+
+      osc1.start(time);
+      osc1.stop(time + duration);
+      osc2.start(time);
+      osc2.stop(time + duration);
+
+      oscs.push(osc1, osc2, subGain);
+    });
+
+    this._scheduleCleanup([...oscs, filter, chordGain], (duration + 0.1) * 1000);
+  }
+
+  _playBeatBass(time, freq, duration = 1.5, vol = 1.0) {
+    const ctx = this.ctx;
+    const osc = ctx.createOscillator();
+    const filter = ctx.createBiquadFilter();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, time);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(220, time);
+
+    gain.gain.setValueAtTime(0.001, time);
+    gain.gain.linearRampToValueAtTime(0.44 * vol, time + 0.015);
+    gain.gain.setValueAtTime(0.34 * vol, time + duration * 0.7);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.beatGain);
+
+    osc.start(time);
+    osc.stop(time + duration);
+    this._scheduleCleanup([osc, filter, gain], (duration + 0.1) * 1000);
+  }
+
   // 1. Bola quicando na quadra (Drible / Piso)
+  // Física acústica abafada, macia e ~20% mais baixa:
+  // - Sub-impacto suave e arredondado (90Hz -> 62Hz) dando peso sem estalar
+  // - Cavidade de ar oca e abafada (152Hz -> 104Hz com filtro passa-banda em 128Hz)
+  // - Ping elástico suave e amortecido (260Hz -> 180Hz)
+  // - Estalo de contato macio com filtro passa-baixa em 720Hz (couro/borracha macia sem agudos duros)
   playBounce(intensity = 1.0) {
     const ctx = this._ensureContext();
     if (!ctx || this.isMuted) return;
 
     const t = ctx.currentTime;
-    const vol = Math.max(0.05, Math.min(1.0, intensity));
-    const duration = 0.12;
+    // 20% mais baixo conforme solicitado
+    const vol = Math.max(0.08, Math.min(1.0, intensity)) * 0.80;
+    const duration = 0.082;
+    const dest = this.ballGain || this.masterGain;
 
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+    // A. Sub-impacto suave e arredondado (90Hz -> 62Hz)
+    const subOsc = ctx.createOscillator();
+    const subGain = ctx.createGain();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(90 + vol * 16, t);
+    subOsc.frequency.exponentialRampToValueAtTime(62, t + 0.065);
 
-    osc.type = 'sine';
-    const startFreq = 135 + vol * 25;
-    const endFreq = 42;
-    osc.frequency.setValueAtTime(startFreq, t);
-    osc.frequency.exponentialRampToValueAtTime(endFreq, t + duration);
+    subGain.gain.setValueAtTime(0.001, t);
+    subGain.gain.linearRampToValueAtTime(0.70 * vol, t + 0.003);
+    subGain.gain.exponentialRampToValueAtTime(0.001, t + 0.068);
 
-    gain.gain.setValueAtTime(0.001, t);
-    gain.gain.linearRampToValueAtTime(0.85 * vol, t + 0.004);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+    subOsc.connect(subGain);
+    subGain.connect(dest);
+    subOsc.start(t);
+    subOsc.stop(t + 0.07);
 
-    const click = ctx.createOscillator();
-    const clickGain = ctx.createGain();
-    click.type = 'triangle';
-    click.frequency.setValueAtTime(280 * vol, t);
-    click.frequency.exponentialRampToValueAtTime(80, t + 0.02);
+    // B. Cavidade de ar oca e abafada (152Hz -> 104Hz)
+    const cavityOsc = ctx.createOscillator();
+    const cavityGain = ctx.createGain();
+    const cavityFilter = ctx.createBiquadFilter();
 
-    clickGain.gain.setValueAtTime(0.4 * vol, t);
-    clickGain.gain.exponentialRampToValueAtTime(0.001, t + 0.02);
+    cavityOsc.type = 'triangle';
+    const startFreq = 152 + vol * 20;
+    const endFreq = 104;
+    cavityOsc.frequency.setValueAtTime(startFreq, t);
+    cavityOsc.frequency.exponentialRampToValueAtTime(endFreq, t + duration);
 
-    osc.connect(gain);
-    gain.connect(this.masterGain);
+    cavityFilter.type = 'bandpass';
+    cavityFilter.frequency.setValueAtTime(128, t);
+    cavityFilter.Q.setValueAtTime(2.6, t);
 
-    click.connect(clickGain);
-    clickGain.connect(this.masterGain);
+    cavityGain.gain.setValueAtTime(0.001, t);
+    cavityGain.gain.linearRampToValueAtTime(0.78 * vol, t + 0.003);
+    cavityGain.gain.exponentialRampToValueAtTime(0.001, t + duration);
 
-    osc.start(t);
-    osc.stop(t + duration);
-    click.start(t);
-    click.stop(t + 0.025);
+    cavityOsc.connect(cavityFilter);
+    cavityFilter.connect(cavityGain);
+    cavityGain.connect(dest);
 
-    this._scheduleCleanup([osc, gain, click, clickGain], (duration + 0.05) * 1000);
+    cavityOsc.start(t);
+    cavityOsc.stop(t + duration);
+
+    // C. Ping elástico da carcaça — amortecido e aveludado (260Hz -> 180Hz)
+    const pingOsc = ctx.createOscillator();
+    const pingGain = ctx.createGain();
+    pingOsc.type = 'sine';
+    pingOsc.frequency.setValueAtTime(260 + vol * 24, t);
+    pingOsc.frequency.exponentialRampToValueAtTime(180, t + 0.04);
+
+    pingGain.gain.setValueAtTime(0.001, t);
+    pingGain.gain.linearRampToValueAtTime(0.18 * vol, t + 0.002);
+    pingGain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+
+    pingOsc.connect(pingGain);
+    pingGain.connect(dest);
+
+    pingOsc.start(t);
+    pingOsc.stop(t + 0.044);
+
+    // D. Estalo de contato abafado (filtro passa-baixa em 720Hz elimina chiados agudos)
+    const slapLen = Math.floor(ctx.sampleRate * 0.018);
+    const slapBuf = ctx.createBuffer(1, slapLen, ctx.sampleRate);
+    const slapData = slapBuf.getChannelData(0);
+    for (let i = 0; i < slapLen; i++) slapData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (slapLen * 0.32));
+
+    const slapSource = ctx.createBufferSource();
+    slapSource.buffer = slapBuf;
+
+    const slapFilter = ctx.createBiquadFilter();
+    slapFilter.type = 'lowpass';
+    slapFilter.frequency.setValueAtTime(720, t);
+    slapFilter.Q.setValueAtTime(1.4, t);
+
+    const slapGain = ctx.createGain();
+    slapGain.gain.setValueAtTime(0.38 * vol, t);
+    slapGain.gain.exponentialRampToValueAtTime(0.001, t + 0.018);
+
+    slapSource.connect(slapFilter);
+    slapFilter.connect(slapGain);
+    slapGain.connect(dest);
+
+    slapSource.start(t);
+    slapSource.stop(t + 0.02);
+
+    this._scheduleCleanup([subOsc, subGain, cavityOsc, cavityFilter, cavityGain, pingOsc, pingGain, slapSource, slapFilter, slapGain], (duration + 0.05) * 1000);
   }
 
   // 2. Bola no Aro Metálico
@@ -1122,6 +1563,7 @@ class BasketballAudio {
     const t = ctx.currentTime;
     const vol = Math.max(0.1, Math.min(1.0, intensity));
     const duration = 0.28;
+    const dest = this.ballGain || this.masterGain;
 
     const filter = ctx.createBiquadFilter();
     filter.type = 'bandpass';
@@ -1134,7 +1576,7 @@ class BasketballAudio {
     masterHitGain.gain.exponentialRampToValueAtTime(0.001, t + duration);
 
     filter.connect(masterHitGain);
-    masterHitGain.connect(this.masterGain);
+    masterHitGain.connect(dest);
 
     const freqs = [318, 574, 892];
     const oscs = freqs.map((f, i) => {
@@ -1163,7 +1605,7 @@ class BasketballAudio {
     clickG.gain.exponentialRampToValueAtTime(0.001, t + 0.02);
 
     click.connect(clickG);
-    clickG.connect(this.masterGain);
+    clickG.connect(dest);
     click.start(t);
     click.stop(t + 0.025);
 
@@ -1178,6 +1620,7 @@ class BasketballAudio {
     const t = ctx.currentTime;
     const vol = Math.max(0.1, Math.min(1.0, intensity));
     const duration = 0.16;
+    const dest = this.ballGain || this.masterGain;
 
     const subOsc = ctx.createOscillator();
     const subGain = ctx.createGain();
@@ -1190,7 +1633,7 @@ class BasketballAudio {
     subGain.gain.exponentialRampToValueAtTime(0.001, t + duration);
 
     subOsc.connect(subGain);
-    subGain.connect(this.masterGain);
+    subGain.connect(dest);
 
     const noiseLength = Math.floor(ctx.sampleRate * duration);
     const noiseBuf = ctx.createBuffer(1, noiseLength, ctx.sampleRate);
@@ -1213,7 +1656,7 @@ class BasketballAudio {
 
     noiseSource.connect(lowpass);
     lowpass.connect(noiseGain);
-    noiseGain.connect(this.masterGain);
+    noiseGain.connect(dest);
 
     subOsc.start(t);
     subOsc.stop(t + duration);
@@ -1223,78 +1666,102 @@ class BasketballAudio {
     this._scheduleCleanup([subOsc, subGain, noiseSource, lowpass, noiseGain], (duration + 0.05) * 1000);
   }
 
-  // 4. Rede ("Chuá" / Swish)
+  // 4. Rede ("Chuá" / Swish) — Suave, realista e aveludado
   playSwish(intensity = 1.0) {
     const ctx = this._ensureContext();
     if (!ctx || this.isMuted) return;
 
     const t = ctx.currentTime;
     const vol = Math.max(0.1, Math.min(1.0, intensity));
-    const duration = 0.26;
+    const duration = 0.28;
+    const dest = this.ballGain || this.masterGain;
 
     const noiseLength = Math.floor(ctx.sampleRate * duration);
     const noiseBuf = ctx.createBuffer(1, noiseLength, ctx.sampleRate);
     const data = noiseBuf.getChannelData(0);
+    // Ruído com leve suavização orgânica (textura aveludada do nylon)
+    let last = 0;
     for (let i = 0; i < noiseLength; i++) {
-      data[i] = Math.random() * 2 - 1;
+      const white = Math.random() * 2 - 1;
+      last = last * 0.42 + white * 0.58;
+      data[i] = last;
     }
 
-    const noiseSource = ctx.createBufferSource();
-    noiseSource.buffer = noiseBuf;
+    const source = ctx.createBufferSource();
+    source.buffer = noiseBuf;
 
+    // Filtro suave em forma de varredura natural da bola escorregando na rede
     const bandpass = ctx.createBiquadFilter();
     bandpass.type = 'bandpass';
-    bandpass.Q.setValueAtTime(3.2, t);
-    bandpass.frequency.setValueAtTime(800, t);
-    bandpass.frequency.exponentialRampToValueAtTime(1850, t + 0.08);
-    bandpass.frequency.exponentialRampToValueAtTime(620, t + duration);
+    bandpass.Q.setValueAtTime(2.2, t);
+    bandpass.frequency.setValueAtTime(650, t);
+    bandpass.frequency.exponentialRampToValueAtTime(1450, t + 0.07);
+    bandpass.frequency.exponentialRampToValueAtTime(480, t + duration);
 
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.001, t);
-    gain.gain.linearRampToValueAtTime(0.7 * vol, t + 0.04);
+    gain.gain.linearRampToValueAtTime(0.85 * vol, t + 0.035);
     gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
 
-    noiseSource.connect(bandpass);
+    source.connect(bandpass);
     bandpass.connect(gain);
-    gain.connect(this.masterGain);
+    gain.connect(dest);
 
-    noiseSource.start(t);
-    noiseSource.stop(t + duration);
+    source.start(t);
+    source.stop(t + duration);
 
-    this._scheduleCleanup([noiseSource, bandpass, gain], (duration + 0.05) * 1000);
+    this._scheduleCleanup([source, bandpass, gain], (duration + 0.05) * 1000);
   }
 
-  // 5. Tênis arrastando na quadra
+  // 5. Tênis arrastando na quadra (Atrito de Borracha no Piso)
   playShoeSqueak(intensity = 1.0) {
     const ctx = this._ensureContext();
     if (!ctx || this.isMuted) return;
 
     const t = ctx.currentTime;
-    const vol = Math.max(0.1, Math.min(1.0, intensity));
-    const duration = 0.09 + Math.random() * 0.05;
+    const vol = Math.max(0.05, Math.min(1.0, intensity)) * 0.35;
+    const duration = 0.065 + Math.random() * 0.03;
+    const dest = this.shoesGain || this.masterGain;
 
-    const osc = ctx.createOscillator();
+    const carrier = ctx.createOscillator();
+    const mod = ctx.createOscillator();
+    const modGain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
     const gain = ctx.createGain();
 
-    osc.type = 'sine';
-    const baseFreq = 2200 + Math.random() * 950;
-    const peakFreq = baseFreq + (Math.random() > 0.5 ? 420 : -350);
+    carrier.type = 'triangle';
+    const baseFreq = 2350 + Math.random() * 450;
+    const peakFreq = baseFreq + (Math.random() > 0.5 ? 240 : -200);
 
-    osc.frequency.setValueAtTime(baseFreq, t);
-    osc.frequency.exponentialRampToValueAtTime(peakFreq, t + duration * 0.45);
-    osc.frequency.exponentialRampToValueAtTime(baseFreq - 150, t + duration);
+    carrier.frequency.setValueAtTime(baseFreq, t);
+    carrier.frequency.exponentialRampToValueAtTime(peakFreq, t + duration * 0.48);
+    carrier.frequency.exponentialRampToValueAtTime(baseFreq - 160, t + duration);
+
+    mod.type = 'sine';
+    mod.frequency.setValueAtTime(72, t);
+    modGain.gain.setValueAtTime(75, t);
+
+    mod.connect(modGain);
+    modGain.connect(carrier.frequency);
+
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(baseFreq, t);
+    filter.Q.setValueAtTime(4.2, t);
 
     gain.gain.setValueAtTime(0.001, t);
-    gain.gain.linearRampToValueAtTime(0.35 * vol, t + 0.015);
+    gain.gain.linearRampToValueAtTime(0.22 * vol, t + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
 
-    osc.connect(gain);
-    gain.connect(this.masterGain);
+    carrier.connect(filter);
+    filter.connect(gain);
+    gain.connect(dest);
 
-    osc.start(t);
-    osc.stop(t + duration);
+    mod.start(t);
+    mod.stop(t + duration);
+    carrier.start(t);
+    carrier.stop(t + duration);
 
-    this._scheduleCleanup([osc, gain], (duration + 0.05) * 1000);
+    this._scheduleCleanup([carrier, mod, modGain, filter, gain], (duration + 0.05) * 1000);
   }
 
   // 6. Buzina de Fim de Jogo + Fanfarra Triunfal
@@ -3998,6 +4465,7 @@ function startSinglePlayerGame() {
   if (typeof audio !== 'undefined') {
     audio.reset();
     audio.playWhistle(0.85);
+    if (audio.beatEnabled && !audio.beatPlaying) audio.startBeat();
   }
   if (!document.body.classList.contains('mobile')) {
     try { cvs.requestPointerLock(); } catch (e) {}
@@ -4276,7 +4744,6 @@ function executeBlock(defender, shooter) {
   say(defender === P ? 'TOCO DE DEFESA!' : 'CPU DEU TOCO!', 1.2, defender === P ? 'good' : 'bad');
   if (typeof audio !== 'undefined') {
     audio.playBackboardHit(0.9);
-    audio.playWhistle(0.6);
   }
 }
 
@@ -4404,8 +4871,7 @@ function resolveStealContact(o) {
     if (o === P) say('ROUBADA DE BOLA!', 1.2, 'good');
     else if (T === P) say('CPU ROUBOU A BOLA!', 1.2, 'bad');
     if (typeof audio !== 'undefined') {
-      audio.playShoeSqueak(0.9);
-      audio.playWhistle(0.65);
+      audio.playShoeSqueak(0.5);
     }
   } else {
     // Só raspou: a bola balança na mão do dono e o portador sente o toque
@@ -4497,6 +4963,7 @@ addEventListener('keydown', e => {
   if (e.repeat) return;
   if (e.code === 'KeyH') { window.toggleControls(); return; }
   if (e.code === 'KeyM') { window.toggleMuteAudio && window.toggleMuteAudio(); return; }
+  if (e.code === 'KeyN') { if (typeof audio !== 'undefined') audio.toggleBeat(); return; }
   if (inStartMenu) return;
   K[e.code] = true;
 
@@ -4874,11 +5341,12 @@ function handleRimAndBackboardPhysics(dt) {
 
         if (typeof audio !== 'undefined') {
           if (wasDunk) {
-            audio.playRimHit(1.0);
-            audio.playSwish(0.9);
+            audio.playRimHit(1.2);
+            audio.playSwish(1.35);
           } else {
-            audio.playSwish(1.0);
+            audio.playSwish(1.4);
           }
+          audio.playWhistle(0.85);
         }
 
         // Gatilho da comemoração: apenas após a cesta ser confirmada na rede
@@ -7455,6 +7923,48 @@ requestAnimationFrame(loop);
   };
   document.querySelectorAll('#cfg-mb button').forEach(b => b.onclick = () => { cfg.mb = +b.dataset.mb; save(); applyMb(); });
   applyMb();
+  const applyBeat = () => {
+    const isBeatOn = typeof audio !== 'undefined' ? audio.beatEnabled : (localStorage.getItem('sh_beat') !== '0');
+    document.querySelectorAll('#cfg-beat button').forEach(b => b.classList.toggle('on', (b.dataset.b === '1') === isBeatOn));
+  };
+  document.querySelectorAll('#cfg-beat button').forEach(b => b.onclick = () => {
+    const on = b.dataset.b === '1';
+    if (typeof audio !== 'undefined') audio.setBeatEnabled(on);
+    applyBeat();
+  });
+  applyBeat();
+
+  // Alternância de Abas nas Configurações (Geral / Áudio)
+  const tabGameBtn = $('btn-tab-game'), tabAudioBtn = $('btn-tab-audio');
+  const tabGameContent = $('cfg-tab-game'), tabAudioContent = $('cfg-tab-audio');
+  const setCfgTab = (which) => {
+    if (tabGameBtn) tabGameBtn.classList.toggle('on', which === 'game');
+    if (tabAudioBtn) tabAudioBtn.classList.toggle('on', which === 'audio');
+    if (tabGameContent) tabGameContent.style.display = which === 'game' ? 'block' : 'none';
+    if (tabAudioContent) tabAudioContent.style.display = which === 'audio' ? 'block' : 'none';
+  };
+  if (tabGameBtn) tabGameBtn.onclick = () => setCfgTab('game');
+  if (tabAudioBtn) tabAudioBtn.onclick = () => setCfgTab('audio');
+
+  // Sliders de Volume Independentes (Bola, Tênis, Música)
+  const syncVolSlider = (slId, valId, getVal, setVal) => {
+    const sl = $(slId), valEl = $(valId);
+    if (!sl || !valEl) return;
+    const initial = Math.round(getVal() * 100);
+    sl.value = initial;
+    valEl.textContent = initial + '%';
+    sl.oninput = e => {
+      const v = parseInt(e.target.value, 10);
+      valEl.textContent = v + '%';
+      setVal(v / 100);
+    };
+  };
+
+  if (typeof audio !== 'undefined') {
+    syncVolSlider('cfg-vol-ball', 'cfg-vol-ball-val', () => audio.volBall, v => audio.setBallVolume(v));
+    syncVolSlider('cfg-vol-shoes', 'cfg-vol-shoes-val', () => audio.volShoes, v => audio.setShoesVolume(v));
+    syncVolSlider('cfg-vol-music', 'cfg-vol-music-val', () => audio.volMusic, v => audio.setMusicVolume(v));
+  }
   const toggleCfgPanel = () => {
     const o = panel.style.display !== 'block';
     panel.style.display = o ? 'block' : 'none';
@@ -7577,6 +8087,21 @@ html #cfg-panel .seg button:hover, html #cfg-panel .act:hover, html #face-panel 
 html #cfg-panel .seg button.on, html #face-panel .chip.on, html .wc.on {
   background: linear-gradient(180deg, #8f0b27 0%, #6D001A 50%, #450010 100%);
   border-color: rgba(255,255,255,.6); text-shadow: 0 1px 2px rgba(0,0,0,.7);
+}
+html .cfg-tabs {
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+}
+html .cfg-tab-btn {
+  font-family: var(--font);
+  border-radius: 10px;
+}
+html .cfg-tab-btn.on {
+  background: linear-gradient(180deg, #8f0b27 0%, #6D001A 50%, #450010 100%);
+  border-color: rgba(255, 255, 255, 0.55);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(109, 0, 26, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 html .wc.on { background: rgba(109,0,26,.35); border-color: #6D001A; text-shadow: none; }
 html #face-panel .sw { border-color: rgba(255,255,255,.35); }
