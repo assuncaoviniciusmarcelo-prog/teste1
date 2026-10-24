@@ -6929,10 +6929,11 @@ try { (() => {
   // relevo: zona plana ao redor da quadra + colinas suaves + grande colina principal atrás da cesta (z negativo)
   const terrainH = (x, z) => {
     const d = Math.hypot(x - cx, z - cz);
-    const rolling = Math.max(0, (fbm(x * 0.006 + 3.1, z * 0.006 + 7.7) - 0.36) * 80) * smooth(34, 170, d);
-    const rx = x - (cx + 90), rz = z - (cz - 330);
-    const bliss = 90 * Math.exp(-(rx * rx) / (2 * 280 * 280) - (rz * rz) / (2 * 175 * 175)) * (1 - 0.30 * cl(rx / 450, -1, 1));
-    return FLAT + rolling + bliss;
+    const mask = smooth(70, 280, d);                           // 0 = plano até 70 m da quadra; colinas só aparecem longe
+    const rolling = Math.max(0, (fbm(x * 0.006 + 3.1, z * 0.006 + 7.7) - 0.38) * 60);
+    const rx = x - (cx + 120), rz = z - (cz - 520);             // colina principal atrás da cesta (z negativo)
+    const bliss = 95 * Math.exp(-(rx * rx) / (2 * 330 * 330) - (rz * rz) / (2 * 200 * 200)) * (1 - 0.30 * cl(rx / 500, -1, 1));
+    return FLAT + mask * (rolling + bliss);
   };
 
   // ---------- céu (shader) ----------
