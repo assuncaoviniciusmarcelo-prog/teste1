@@ -1091,6 +1091,7 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script>if (typeof Peer === 'undefined') document.write('<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"><\/script>');</script>
 <button id="daynight-btn" aria-label="Alternar dia e noite" title="Modo dia — clique para a noite"><svg class="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.6"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2.2v2.6M12 19.2v2.6M2.2 12h2.6M19.2 12h2.6M5.1 5.1l1.8 1.8M17.1 17.1l1.8 1.8M5.1 18.9l1.8-1.8M17.1 6.9l1.8-1.8"/></g></svg><svg class="moon" viewBox="0 0 24 24"><path d="M20.3 14.6A8.6 8.6 0 0 1 9.4 3.7a.6.6 0 0 0-.8-.7A9.6 9.6 0 1 0 21 15.4a.6.6 0 0 0-.7-.8z"/></svg></button>
 <div id="vhs-osd"><span class="rec">&#9654;</span> PLAY<small>SP &nbsp;<span id="vhs-cnt">0:00:00</span></small><small>V = VHS ON/OFF</small></div>
 <script>
@@ -3501,6 +3502,7 @@ function netStatus(t) { const e = document.getElementById('net-status'); if (e) 
 
 function netClose() {
   try { applyFace(mA, FACE_AI); } catch (e) {}
+  clearTimeout(NET.connTimer);
   try { if (NET.conn) NET.conn.close(); } catch (e) {}
   try { if (NET.peer) NET.peer.destroy(); } catch (e) {}
   NET.role = null; NET.live = false; NET.swapped = false; NET.conn = null; NET.peer = null; NET.snap = null;
@@ -3509,37 +3511,81 @@ function netClose() {
   NET.opNick = null; refreshNames();
 }
 
+// Servidores ICE: o TURN gratuito do PeerJS foi encerrado, então usamos vários STUN.
+// Para redes restritivas (4G/CGNAT), defina um TURN próprio:  window.HOOP_TURN = { urls: 'turn:...', username: '...', credential: '...' }
+function netPeerOpts() {
+  const ice = [
+    { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:global.stun.twilio.com:3478' }
+  ];
+  try { if (window.HOOP_TURN) ice.push(...[].concat(window.HOOP_TURN)); } catch (e) {}
+  return { config: { iceServers: ice, sdpSemantics: 'unified-plan' }, debug: 1 };
+}
+function netErrText(e) {
+  const t = (e && e.type) || String(e);
+  const m = {
+    'peer-unavailable': 'SALA NÃO ENCONTRADA — CONFIRA O CÓDIGO (O ANFITRIÃO PRECISA ESTAR NO MENU)',
+    'network': 'SEM ACESSO AO SERVIDOR DE SALAS — VERIFIQUE A INTERNET',
+    'server-error': 'SERVIDOR DE SALAS INDISPONÍVEL — TENTE EM INSTANTES',
+    'socket-error': 'SERVIDOR DE SALAS INDISPONÍVEL — TENTE EM INSTANTES',
+    'socket-closed': 'CONEXÃO COM O SERVIDOR CAIU — TENTE DE NOVO',
+    'webrtc': 'REDE BLOQUEOU A CONEXÃO DIRETA (WEBRTC)',
+    'browser-incompatible': 'NAVEGADOR SEM SUPORTE A WEBRTC',
+    'ssl-unavailable': 'SERVIDOR SEGURO INDISPONÍVEL',
+    'invalid-id': 'CÓDIGO INVÁLIDO'
+  };
+  return m[t] || ('ERRO: ' + t);
+}
+const NET_FAIL_TEXT = 'NÃO CONECTOU (REDE/NAT BLOQUEIA P2P) — TENTE WI-FI, OUTRA REDE OU CONFIGURE UM TURN';
+
+function netWatchConn(c, role) {
+  // o PeerJS avisa quando o caminho P2P (ICE) falha — comum em 4G/CGNAT sem servidor TURN
+  c.on('iceStateChanged', st => { if (st === 'failed' && NET.role === role && !NET.live && role !== 'host') netStatus(NET_FAIL_TEXT); });
+  c.on('error', e => { if (NET.role === role) netStatus(netErrText(e)); });
+}
+
 function netHost() {
-  if (typeof Peer === 'undefined') { netStatus('SEM CONEXÃO COM O SERVIDOR DE SALAS'); return; }
+  if (typeof Peer === 'undefined') { netStatus('SEM CONEXÃO COM O SERVIDOR DE SALAS (PEERJS NÃO CARREGOU)'); return; }
   if (MODE === 'train') setMode('1v1');
   netClose();
   const code = Math.random().toString(36).slice(2, 7).toUpperCase();
   NET.role = 'host';
   netStatus('CRIANDO SALA...');
-  NET.peer = new Peer(NET_PREFIX + code);
-  NET.peer.on('open', () => netStatus('CÓDIGO: ' + code + ' — ENVIE AO AMIGO'));
-  NET.peer.on('error', e => { netStatus('ERRO: ' + (e.type || e)); if (e.type === 'unavailable-id') netHost(); });
-  NET.peer.on('connection', c => {
+  const peer = NET.peer = new Peer(NET_PREFIX + code, netPeerOpts());
+  NET.connTimer = setTimeout(() => { if (NET.peer === peer && !peer.open) netStatus('SERVIDOR DE SALAS NÃO RESPONDEU — TENTE NOVAMENTE'); }, 12000);
+  peer.on('open', () => { clearTimeout(NET.connTimer); netStatus('CÓDIGO: ' + code + ' — ENVIE AO AMIGO'); });
+  peer.on('disconnected', () => { try { if (NET.peer === peer && !peer.destroyed) peer.reconnect(); } catch (e) {} });
+  peer.on('error', e => {
+    if (e && e.type === 'unavailable-id') { netHost(); return; }
+    if (NET.peer === peer) netStatus(netErrText(e));
+  });
+  peer.on('connection', c => {
     if (NET.conn) { c.close(); return; }
     NET.conn = c;
+    netWatchConn(c, 'host');
     c.on('open', () => { NET.live = true; netSetupHost(c); startSinglePlayerGame(); });
     c.on('close', netDropped);
   });
 }
 
 function netJoin() {
-  if (typeof Peer === 'undefined') { netStatus('SEM CONEXÃO COM O SERVIDOR DE SALAS'); return; }
+  if (typeof Peer === 'undefined') { netStatus('SEM CONEXÃO COM O SERVIDOR DE SALAS (PEERJS NÃO CARREGOU)'); return; }
   const code = (document.getElementById('net-code').value || '').trim().toUpperCase();
   if (code.length < 3) { netStatus('DIGITE O CÓDIGO DA SALA'); return; }
   netClose();
   NET.role = 'guest';
   netStatus('CONECTANDO...');
-  NET.peer = new Peer();
-  NET.peer.on('error', e => { netStatus('ERRO: ' + (e.type || e)); NET.role = null; });
-  NET.peer.on('open', () => {
-    const c = NET.peer.connect(NET_PREFIX + code, { reliable: true });
+  const peer = NET.peer = new Peer(undefined, netPeerOpts());
+  let opened = false;
+  NET.connTimer = setTimeout(() => { if (NET.peer === peer && !opened) netStatus(NET_FAIL_TEXT); }, 20000);
+  peer.on('error', e => { if (NET.peer !== peer) return; clearTimeout(NET.connTimer); netStatus(netErrText(e)); NET.role = null; });
+  peer.on('disconnected', () => { try { if (NET.peer === peer && !peer.destroyed) peer.reconnect(); } catch (e) {} });
+  peer.on('open', () => {
+    const c = peer.connect(NET_PREFIX + code, { reliable: true });
     NET.conn = c;
+    netWatchConn(c, 'guest');
     c.on('open', () => {
+      opened = true; clearTimeout(NET.connTimer);
       netSetupGuest(c);
       // o convidado inicia a partida ao receber o modo da sala (1v1 / 2v2); fallback 1v1
       setTimeout(() => { if (NET.role === 'guest' && inStartMenu) startSinglePlayerGame(); }, 2500);
