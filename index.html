@@ -3419,7 +3419,13 @@ applyFace(mA2, { skin: 'ai', hair: 'fade', hcol: 1, bcol: 1, beard: 'stubble' })
       const val = mk.val(it, i), b = document.createElement('button');
       b.className = mk.cls + (faceCfg[key] === val ? ' on' : '');
       mk.paint(b, it);
-      b.onclick = () => { faceCfg[key] = val; applyFace(mP, faceCfg); refresh(); };
+      b.onclick = () => {
+        faceCfg[key] = val;
+        applyFace(mP, faceCfg);
+        refresh();
+        try { localStorage.setItem('aerohoop-face-v2', JSON.stringify(faceCfg)); } catch (e) {}
+        if (window.netSendCustomization) window.netSendCustomization();
+      };
       box.appendChild(b);
     });
   };
@@ -3442,7 +3448,7 @@ applyFace(mA2, { skin: 'ai', hair: 'fade', hcol: 1, bcol: 1, beard: 'stubble' })
     faceEdit = false; pn.style.display = 'none';
     try { localStorage.setItem('aerohoop-face-v2', JSON.stringify(faceCfg)); } catch (e) {}
     const ss = $('start-screen'); if (ss && inStartMenu) ss.classList.remove('hidden');
-    if (NET.live) netSend({ t: 'face', f: faceCfg });
+    if (window.netSendCustomization) window.netSendCustomization();
   };
 })();
 
@@ -3848,8 +3854,9 @@ function setPlayerHandPose(m, poseOrGun, dt = 0.016, o = null) {
     {id:'nation',name:'Jeans Baggy Preto — Nation',base:'#101216',matte:0x101216,seam:0x2a2d35,stitch:'#d9d9d6',draw:(x,sg,B)=>{
       const ink='#dcdcda';
       if(sg>0){
-        front(x,512,()=>{
-          x.save();x.translate(0,150);x.scale(1,1.69);x.fillStyle=ink;
+        // Perna Esquerda: Cursiva 'Nation' e arco de estrelas na parte de TRÁS (backP)
+        backP(x,512,()=>{
+          x.save();x.translate(0,160);x.scale(1,1.69);x.fillStyle=ink;
           for(let i=0;i<7;i++){const a=Math.PI*(1.12+i*0.13);x.save();x.translate(Math.cos(a)*74,Math.sin(a)*52+30);starPath(x,9,4,0,0);x.fill();x.restore()}
           x.beginPath();x.moveTo(-34,40);x.quadraticCurveTo(-4,0,40,24);x.quadraticCurveTo(10,30,-8,60);x.closePath();x.fill();
           x.restore();
@@ -3857,6 +3864,7 @@ function setPlayerHandPose(m, poseOrGun, dt = 0.016, o = null) {
           x.font='italic 118px "Segoe Script","Brush Script MT","Snell Roundhand",cursive';x.textAlign='center';x.textBaseline='middle';x.fillStyle=ink;x.fillText('Nation',0,0);x.restore();
         });
       } else {
+        // Perna Direita: Emblema 'History' e detalhes na parte da FRENTE (front)
         front(x,512,()=>{
           x.save();x.translate(0,330);x.scale(1,1.69);x.fillStyle=ink;x.strokeStyle=ink;x.lineWidth=2;
           x.fillRect(-30,-6,60,64);x.beginPath();x.arc(0,-6,30,Math.PI,6.283);x.fill();x.fillRect(-5,-58,10,22);x.beginPath();x.moveTo(-5,-58);x.lineTo(0,-76);x.lineTo(5,-58);x.fill();
@@ -3874,23 +3882,43 @@ function setPlayerHandPose(m, poseOrGun, dt = 0.016, o = null) {
     }},
     {id:'azulstar',name:'Jeans Baggy Azul — Estrela Y2K',base:'#7595bd',matte:0x7595bd,seam:0x5a7aa3,stitch:'#f1dca0',draw:(x,sg,B)=>{
       x.save();for(const [cx,cy,r,a] of [[0,260,150,0.16],[256,260,150,0.12],[0,780,160,0.14],[512,780,160,0.14]]){const g=x.createRadialGradient(cx,cy,10,cx,cy,r);g.addColorStop(0,'rgba(255,255,255,'+a+')');g.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=g;x.fillRect(cx-r,cy-r,r*2,r*2)}x.restore();
-      front(x,512,()=>{
-        x.save();x.translate(0,sg>0?300:260);x.scale(1,1.69);
-        if(sg>0)drawStarOrbit(x,'#10285a',1.15);
-        else{x.strokeStyle='#ffffff';x.fillStyle='#ffffff';x.lineWidth=1.8;const P=[[-40,-50],[-6,-24],[34,-60],[52,-6],[10,18],[-34,34]];x.beginPath();P.forEach((p,i)=>x[i?'lineTo':'moveTo'](p[0],p[1]));x.stroke();P.forEach((p,i)=>{x.save();x.translate(p[0],p[1]);starPath(x,i%2?7:11,3.5,0,0);x.fill();x.restore()})}
-        x.restore();
-        x.save();x.translate(0,790);x.scale(1,1.69);x.fillStyle='#ffffff';starPath(x,16,7,0.1,0.05);x.fill();x.restore();
-      });
+      if(sg>0){
+        // Perna Esquerda: Estampa da estrela azul escuro na parte de TRÁS (backP)
+        backP(x,512,()=>{
+          x.save();x.translate(0,300);x.scale(1,1.69);
+          drawStarOrbit(x,'#10285a',1.22);
+          x.restore();
+          x.save();x.translate(0,780);x.scale(1,1.69);x.fillStyle='#ffffff';starPath(x,16,7,0.1,0.05);x.fill();x.restore();
+        });
+      } else {
+        // Perna Direita: Constelação de estrelas na parte da FRENTE (front)
+        front(x,512,()=>{
+          x.save();x.translate(0,260);x.scale(1,1.69);
+          x.strokeStyle='#ffffff';x.fillStyle='#ffffff';x.lineWidth=1.8;
+          const P=[[-40,-50],[-6,-24],[34,-60],[52,-6],[10,18],[-34,34]];
+          x.beginPath();P.forEach((p,i)=>x[i?'lineTo':'moveTo'](p[0],p[1]));x.stroke();
+          P.forEach((p,i)=>{x.save();x.translate(p[0],p[1]);starPath(x,i%2?7:11,3.5,0,0);x.fill();x.restore()});
+          x.restore();
+          x.save();x.translate(0,790);x.scale(1,1.69);x.fillStyle='#ffffff';starPath(x,16,7,0.1,0.05);x.fill();x.restore();
+        });
+      }
     }},
     {id:'aranhajeans',name:'Jeans Baggy Preto — Aranha',base:'#0e0f12',matte:0x0e0f12,seam:0x23252b,stitch:'#cfcfcc',draw:(x,sg,B)=>{
-      front(x,512,()=>{
-        if(sg>0){x.save();x.translate(0,270);x.scale(1,1.69);drawSpider(x,'#f1f1ef','#9aa0a8',0.72);x.restore();
-          x.save();x.translate(0,800);x.scale(1,1.69);drawSpider(x,'#f1f1ef','#9aa0a8',0.3);x.restore()}
-        else{x.save();x.translate(0,430);x.scale(1,1.69);x.strokeStyle='#e8e8e6';
+      if(sg>0){
+        // Perna Esquerda: Aranhas grandes pintadas na parte de TRÁS (backP)
+        backP(x,512,()=>{
+          x.save();x.translate(0,270);x.scale(1,1.69);drawSpider(x,'#f1f1ef','#9aa0a8',0.72);x.restore();
+          x.save();x.translate(0,800);x.scale(1,1.69);drawSpider(x,'#f1f1ef','#9aa0a8',0.3);x.restore();
+        });
+      } else {
+        // Perna Direita: Teias, arranhões de serigrafia e aranha na parte da FRENTE (front)
+        front(x,512,()=>{
+          x.save();x.translate(0,430);x.scale(1,1.69);x.strokeStyle='#e8e8e6';
           for(let i=0;i<9;i++){x.lineWidth=1+(i%3);x.globalAlpha=0.8;x.beginPath();x.moveTo(-60+i*14,-150+(i*23%50));x.lineTo(-20+i*10,60+(i*31%140));x.stroke()}
           x.globalAlpha=1;x.restore();
-          x.save();x.translate(0,220);x.scale(1,1.69);drawSpider(x,'#f1f1ef','#9aa0a8',0.32);x.restore()}
-      });
+          x.save();x.translate(0,220);x.scale(1,1.69);drawSpider(x,'#f1f1ef','#9aa0a8',0.32);x.restore();
+        });
+      }
     }}
   ];
   const legCanvas=(def,sg)=>{
@@ -4032,66 +4060,137 @@ function setPlayerHandPose(m, poseOrGun, dt = 0.016, o = null) {
   const selShirt=(card,fn)=>{shirtCards.forEach(c=>c.classList.remove('on'));card.classList.add('on');fn()};
   const selPants=(card,fn)=>{pantsCards.forEach(c=>c.classList.remove('on'));card.classList.add('on');fn()};
 
-  const none=document.createElement('div');none.className='wc';none.innerHTML='<b>Sem camiseta</b>';
-  none.onclick=()=>selShirt(none,()=>{for(const q of mP.shirtParts)q.visible=false});wlShirts.appendChild(none);shirtCards.push(none);
+  // Exporta função global para vestir camisetas em qualquer modelo (mP ou mA do amigo remoto)
+  window.applyPlayerShirt=(p,id)=>{
+    if(!p)return;
+    p.shirtId=id;
+    if(!id||id==='none'){
+      if(p.shirtParts)for(const q of p.shirtParts)q.visible=false;
+      return;
+    }
+    const def=SHIRTS.find(s=>s.id===id)||SHIRTS[0];
+    apply(p,def);
+  };
+
+  // Carrega e gerencia o figurino do jogador no localStorage para sincronizar online
+  window.myOutfit = { shirt: 'blessed', pants: 'style:neveryoung' };
+  try {
+    const svO = JSON.parse(localStorage.getItem('aerohoop-outfit-v1') || 'null');
+    if (svO && typeof svO === 'object') {
+      if (svO.shirt !== undefined) myOutfit.shirt = svO.shirt;
+      if (svO.pants !== undefined) myOutfit.pants = svO.pants;
+    }
+  } catch (e) {}
+
+  window.saveMyOutfit = () => {
+    try { localStorage.setItem('aerohoop-outfit-v1', JSON.stringify(myOutfit)); } catch (e) {}
+    if (window.netSendCustomization) window.netSendCustomization();
+  };
+
+  const none=document.createElement('div');
+  none.className='wc' + (myOutfit.shirt === 'none' ? ' on' : '');
+  none.innerHTML='<b>Sem camiseta</b>';
+  none.onclick=()=>selShirt(none,()=>{
+    myOutfit.shirt = 'none';
+    window.applyPlayerShirt(mP, 'none');
+    window.saveMyOutfit();
+  });
+  wlShirts.appendChild(none);shirtCards.push(none);
+
   for(const def of SHIRTS){
-    const card=document.createElement('div');card.className='wc'+(def.id==='blessed'?' on':'');card.innerHTML='<b>'+def.name+' (Oversized)</b>';
+    const card=document.createElement('div');
+    card.className='wc'+(myOutfit.shirt === def.id ? ' on':'');
+    card.innerHTML='<b>'+def.name+' (Oversized)</b>';
     const row=document.createElement('div'),src=canv(def).cv.c;
     if(def.centered){const wc=document.createElement('canvas');wc.width=1024;wc.height=1024;const wx=wc.getContext('2d');wx.drawImage(src,512,0);wx.drawImage(src,-512,0);row.append(thumb(wc,512),thumb(src,512))}else row.append(thumb(src,110),thumb(src,768));card.appendChild(row);
-    card.onclick=()=>selShirt(card,()=>{apply(mP,def);});
+    card.onclick=()=>selShirt(card,()=>{
+      myOutfit.shirt = def.id;
+      window.applyPlayerShirt(mP, def.id);
+      window.saveMyOutfit();
+    });
     wlShirts.appendChild(card);shirtCards.push(card);
   }
 
   // Itens de Calças: Never Young (Foto 4) por padrão no topo!
   for(const pd of PANTS){
-    const card=document.createElement('div');card.className='wc'+(pd.id==='neveryoung'?' on':'');card.innerHTML='<b>'+pd.name+'</b>';
+    const pStyle = 'style:' + pd.id;
+    const card=document.createElement('div');
+    card.className='wc'+(myOutfit.pants === pStyle ? ' on':'');
+    card.innerHTML='<b>'+pd.name+'</b>';
     const pc=document.createElement('canvas');pc.width=280;pc.height=120;pc.className='full';const px=pc.getContext('2d');
     px.fillStyle='#161b26';px.fillRect(0,0,280,120);
-    for(const [sg,dx] of [[-1,50],[1,142]]){const lc=legCanvas(pd,sg),wc=document.createElement('canvas');wc.width=512;wc.height=1024;const wx=wc.getContext('2d');wx.drawImage(lc,256,0);wx.drawImage(lc,-256,0);px.drawImage(wc,128,0,256,1024,dx,6,88,110)}
+    for(const [sg,dx] of [[-1,50],[1,142]]){
+      const lc=legCanvas(pd,sg);
+      // Perna esquerda (sg > 0) das calças estilizadas fica atrás (backP = x:256); perna direita (sg < 0) fica na frente (front = x:0)
+      const isBackLeg = (sg > 0 && (pd.id === 'azulstar' || pd.id === 'nation' || pd.id === 'aranhajeans'));
+      if(isBackLeg){
+        px.drawImage(lc,128,0,256,1024,dx,6,88,110);
+      } else {
+        const wc=document.createElement('canvas');wc.width=512;wc.height=1024;const wx=wc.getContext('2d');
+        wx.drawImage(lc,256,0);wx.drawImage(lc,-256,0);
+        px.drawImage(wc,128,0,256,1024,dx,6,88,110);
+      }
+    }
     card.appendChild(pc);
-    card.onclick=()=>selPants(card,()=>{setPlayerPantsMode(mP,'style:'+pd.id);});
+    card.onclick=()=>selPants(card,()=>{
+      myOutfit.pants = pStyle;
+      setPlayerPantsMode(mP, pStyle);
+      window.saveMyOutfit();
+    });
     wlPants.appendChild(card);pantsCards.push(card);
   }
 
-  const cargoCard=document.createElement('div');cargoCard.className='wc';
+  const cargoCard=document.createElement('div');
+  cargoCard.className='wc' + (myOutfit.pants === 'cargo' ? ' on' : '');
   cargoCard.innerHTML='<b>Calça Cargo Preta — Oversized Tactical</b>';
   const cargoPrev=drawCargoPreview(true);cargoPrev.className='full';cargoCard.appendChild(cargoPrev);
-  cargoCard.onclick=()=>selPants(cargoCard,()=>{setPlayerPantsMode(mP,'cargo');});
+  cargoCard.onclick=()=>selPants(cargoCard,()=>{
+    myOutfit.pants = 'cargo';
+    setPlayerPantsMode(mP, 'cargo');
+    window.saveMyOutfit();
+  });
   wlPants.appendChild(cargoCard);pantsCards.push(cargoCard);
 
-  const shortsCard=document.createElement('div');shortsCard.className='wc';
+  const shortsCard=document.createElement('div');
+  shortsCard.className='wc' + (myOutfit.pants === 'shorts' ? ' on' : '');
   shortsCard.innerHTML='<b>Bermuda Aero — Preta / Ciano</b>';
   const shortsPrev=drawCargoPreview(false);shortsPrev.className='full';shortsCard.appendChild(shortsPrev);
-  shortsCard.onclick=()=>selPants(shortsCard,()=>{setPlayerPantsMode(mP,'shorts');});
+  shortsCard.onclick=()=>selPants(shortsCard,()=>{
+    myOutfit.pants = 'shorts';
+    setPlayerPantsMode(mP, 'shorts');
+    window.saveMyOutfit();
+  });
   wlPants.appendChild(shortsCard);pantsCards.push(shortsCard);
 
-  // Equipa por padrão os modelos autênticos das 4 fotos:
-  // P1: Camiseta Blessed Cinza Streetwear (Foto 1) + Calça Baggy Never Young (Foto 4)
-  apply(mP, SHIRTS[0]);
-  setPlayerPantsMode(mP, 'style:neveryoung');
+  // Aplica o figurino salvo no jogador local P1:
+  window.applyPlayerShirt(mP, myOutfit.shirt);
+  setPlayerPantsMode(mP, myOutfit.pants);
+
+  // CPU ou segundo jogador com modelos iniciais:
   if (mA) {
-    apply(mA, SHIRTS[1]); // CPU com Camiseta Y2K Star Branca (Foto 2) + Calça Baggy Never Young
+    window.applyPlayerShirt(mA, 'estrela'); // Padrão CPU
     setPlayerPantsMode(mA, 'style:neveryoung');
   }
   if (mTM) {
-    apply(mTM, SHIRTS[2]); // Companheiro 2v2 com Camiseta Arachnid Preta (Foto 3) + Calça Baggy
+    window.applyPlayerShirt(mTM, 'aranha');
     setPlayerPantsMode(mTM, 'style:neveryoung');
   }
   if (mA2) {
-    apply(mA2, SHIRTS[0]);
+    window.applyPlayerShirt(mA2, 'blessed');
     setPlayerPantsMode(mA2, 'style:neveryoung');
+  }
+
   if (document.fonts && document.fonts.load) {
     document.fonts.load('140px "ClassiqueScript"').then(() => {
       delete cache['blessed'];
       for (const pl of [mP, mA, mTM, mA2]) {
-        if (pl && pl.shirtMats) apply(pl, SHIRTS[0]);
+        if (pl && pl.shirtId === 'blessed') window.applyPlayerShirt(pl, 'blessed');
         if (pl && pl.pantsMode === 'style:neveryoung') {
           if (pl._pm) { delete pl._pm['neveryoungL']; delete pl._pm['neveryoungR']; }
           if (window.applyPantsStyle) window.applyPantsStyle(pl, 'neveryoung');
         }
       }
     });
-  }
   }
   function syncWardrobeSliderUI() {
     const deg = Math.round((wardrobeRotAng * 180 / Math.PI) % 360);
@@ -4504,10 +4603,48 @@ function confirmNick() {
 })();
 
 function netSend(o) { try { if (NET.conn && NET.conn.open) NET.conn.send(o); } catch (e) {} }
+
+function applyRemoteClothes(p, c) {
+  if (!p || !c) return;
+  p._remoteOutfit = Object.assign(p._remoteOutfit || {}, c);
+  if (c.shirt !== undefined && window.applyPlayerShirt) {
+    window.applyPlayerShirt(p, c.shirt);
+  }
+  if (c.pants !== undefined && window.setPlayerPantsMode) {
+    setPlayerPantsMode(p, c.pants);
+  }
+}
+
+function applyRemoteCustomization(p, data) {
+  if (!p || !data) return;
+  if (data.f) applyFace(p, data.f);
+  if (data.c) applyRemoteClothes(p, data.c);
+  if (data.n) setOpNick(String(data.n || 'ADVERSÁRIO').slice(0, 12));
+}
+
+function netSendCustomization() {
+  if (!NET.conn || !NET.conn.open) return;
+  const payload = {
+    t: 'custom',
+    f: faceCfg,
+    c: (window.myOutfit || { shirt: 'blessed', pants: 'style:neveryoung' }),
+    n: (MY_NICK || 'PLAYER')
+  };
+  netSend(payload);
+  // Pacotes individuais para compatibilidade e redundância
+  netSend({ t: 'face', f: faceCfg });
+  netSend({ t: 'clothes', c: (window.myOutfit || { shirt: 'blessed', pants: 'style:neveryoung' }) });
+  netSend({ t: 'nick', n: MY_NICK });
+}
+window.netSendCustomization = netSendCustomization;
 function netStatus(t) { const e = document.getElementById('net-status'); if (e) e.textContent = t; }
 
 function netClose() {
   try { applyFace(mA, FACE_AI); } catch (e) {}
+  try {
+    if (window.applyPlayerShirt) window.applyPlayerShirt(mA, 'estrela');
+    if (window.setPlayerPantsMode) setPlayerPantsMode(mA, 'style:neveryoung');
+  } catch (e) {}
   clearTimeout(NET.connTimer);
   try { if (NET.conn) NET.conn.close(); } catch (e) {}
   try { if (NET.peer) NET.peer.destroy(); } catch (e) {}
@@ -4640,11 +4777,16 @@ function netSetupHost(c) {
       NET.rin.K[m.c] = m.t === 'd';
       withRemote(() => (m.t === 'd' ? gameKeyDown(m.c) : gameKeyUp(m.c)));
     } else if (m.t === 'rq') reset();
+    else if (m.t === 'custom') applyRemoteCustomization(mA, m);
     else if (m.t === 'face') applyFace(mA, m.f);
+    else if (m.t === 'clothes') applyRemoteClothes(mA, m.c);
     else if (m.t === 'nick') setOpNick(String(m.n || 'ADVERSÁRIO').slice(0, 12));
   });
-  netSend({ t: 'face', f: faceCfg });
-  netSend({ t: 'nick', n: MY_NICK });
+  // Dispara sincronização de personalização completa (face, roupas, nick) com repetição garantida
+  netSendCustomization();
+  setTimeout(netSendCustomization, 300);
+  setTimeout(netSendCustomization, 800);
+  setTimeout(netSendCustomization, 1600);
   netSend({ t: 'mode', m: MODE });
 }
 
@@ -4695,8 +4837,10 @@ function netTick(dt) {
 
 /* ---- CONVIDADO ---- */
 function netSetupGuest(c) {
-  netSend({ t: 'face', f: faceCfg });
-  netSend({ t: 'nick', n: MY_NICK });
+  netSendCustomization();
+  setTimeout(netSendCustomization, 300);
+  setTimeout(netSendCustomization, 800);
+  setTimeout(netSendCustomization, 1600);
   netSend({ t: 'mode', m: MODE });
   // envia as teclas pressionadas e a direção da câmera ~30x por segundo
   NET.timer = setInterval(() => {
@@ -4717,7 +4861,9 @@ function netMapMsg(m) {
 function netGuestData(m) {
   if (!m) return;
   if (m.t === 's') { NET.snap = m; NET.fresh = true; }
+  else if (m.t === 'custom') applyRemoteCustomization(mA, m);
   else if (m.t === 'face') applyFace(mA, m.f);
+  else if (m.t === 'clothes') applyRemoteClothes(mA, m.c);
   else if (m.t === 'nick') setOpNick(String(m.n || 'ADVERSÁRIO').slice(0, 12));
   else if (m.t === 'mode') { MODE = m.m === '2v2' ? '2v2' : '1v1'; setModeUI(); refreshNames(); if (inStartMenu) startSinglePlayerGame(); }
   else if (m.t === 'say') say(m.own ? m.m : netMapMsg(m.m), m.d, m.g, true);
