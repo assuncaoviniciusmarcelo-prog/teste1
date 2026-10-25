@@ -2427,20 +2427,25 @@ function createAeroShirtTexture(bgHex = '#0b0b0e', isLightVariant = false) {
   ctx.moveTo(0, 990); ctx.lineTo(1024, 990);
   ctx.stroke();
 
-  // pequena assinatura no peito
-  ctx.save();
-  ctx.translate(256, 395);
-  ctx.scale(1, 2.07);
-  ctx.font = '700 40px "Segoe UI", Arial, sans-serif';
-  ctx.fillStyle = isLightVariant ? '#0b63c6' : '#8fe6ff';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('aero', 0, 0);
-  ctx.restore();
+  // assinatura no peito (frente centralizada: u = 0 / 1.0)
+  for (const o of [0, 1024]) {
+    ctx.save();
+    ctx.translate(o, 380);
+    ctx.scale(1, 2.07);
+    ctx.font = '700 44px "Segoe UI", Arial, sans-serif';
+    ctx.fillStyle = isLightVariant ? '#0b63c6' : '#8fe6ff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('aero', 0, 0);
+    ctx.strokeStyle = isLightVariant ? 'rgba(11, 99, 198, 0.35)' : 'rgba(143, 230, 255, 0.35)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(-42, 22); ctx.lineTo(42, 22); ctx.stroke();
+    ctx.restore();
+  }
 
-  // emblema grande
+  // emblema grande nas costas (costas centralizadas: u = 0.5 -> x = 512)
   ctx.save();
-  ctx.translate(768, 490);
+  ctx.translate(512, 480);
   ctx.scale(1, 2.07);
   drawAeroEmblem(ctx, 118);
   ctx.restore();
@@ -3611,41 +3616,71 @@ function setPlayerHandPose(m, poseOrGun, dt = 0.016, o = null) {
   const Z=1024,rnd=Math.random;
   const weave=(x,m)=>{x.fillStyle='rgba(0,0,0,'+(m=='h'?.16:.05)+')';for(let i=0;i<Z;i+=3){x.fillRect(i,0,1,Z);x.fillRect(0,i,Z,1)}
     if(m=='h')for(let i=0;i<26000;i++){x.fillStyle=rnd()>.5?'rgba(255,255,255,.12)':'rgba(255,255,255,0)';x.fillRect(rnd()*Z,rnd()*Z,2,2)}};
-  const drawAero=(x,m)=>{
-    const C=c=>m=='c'?c:'#fff';
-    x.save();x.translate(256,430);x.scale(1,2.07);
-    x.font='700 46px "Segoe UI",Arial,sans-serif';x.textAlign='center';x.textBaseline='middle';
-    x.fillStyle=C('#7fe0ff');x.fillText('aero',0,0);x.restore();
-    x.save();x.translate(768,500);x.scale(1,2.07);
-    const g=x.createRadialGradient(-40,-48,10,0,0,125);g.addColorStop(0,'#eafcff');g.addColorStop(.4,'#4cc9ff');g.addColorStop(1,'#0b5fc0');
-    x.fillStyle=m=='c'?g:'#fff';x.beginPath();x.arc(0,0,118,0,6.283);x.fill();
-    x.strokeStyle=C('#ffffff');x.lineWidth=7;x.stroke();
-    x.save();x.beginPath();x.arc(0,0,110,0,6.283);x.clip();
-    x.lineWidth=8;x.strokeStyle=C('#e8fbff');
-    for(let k=0;k<3;k++){x.beginPath();x.moveTo(-120,10+k*34);x.bezierCurveTo(-50,-30+k*34,40,50+k*34,120,0+k*34);x.stroke()}
-    x.restore();
-    x.lineWidth=7;x.lineCap='round';x.strokeStyle=C('#ffffff');
-    x.beginPath();x.arc(0,14,50,Math.PI*1.08,Math.PI*1.92);x.stroke();
-    x.restore();
-  };
-  const drawBubbles=(x,m)=>{
-    const C=c=>m=='c'?c:'#fff';
-    x.save();x.translate(310,560);x.scale(1,2.07);
-    const B=[[0,-70,62],[-70,20,38],[64,34,46],[8,110,26],[-24,-150,22]];
-    for(const[bx,by,br]of B){
-      x.fillStyle=C('rgba(70,190,255,.30)');x.beginPath();x.arc(bx,by,br,0,6.283);x.fill();
-      x.strokeStyle=C('#1d8fe8');x.lineWidth=6;x.stroke();
-      x.strokeStyle=C('#ffffff');x.lineWidth=5;x.lineCap='round';
-      x.beginPath();x.arc(bx,by,br*.68,Math.PI*1.1,Math.PI*1.45);x.stroke();
-    }
-    x.font='700 40px "Segoe UI",Arial,sans-serif';x.textAlign='center';x.textBaseline='middle';
-    x.fillStyle=C('#0b4f9e');x.fillText('hoop',0,170);
-    x.restore();
-  };
-
-  // ===== Estampas Y2K (centralizadas: frente = u 0/1 da textura, costas = u 0.5) =====
+  // ===== Estampas (centralizadas: frente = u 0/1 da textura, costas = u 0.5) =====
   const front=(x,W,fn)=>{for(const o of [0,W]){x.save();x.translate(o,0);fn();x.restore()}};
   const backP=(x,W,fn)=>{x.save();x.translate(W/2,0);fn();x.restore()};
+
+  // 1. Camiseta Aero — Estampas centralizadas na frente (peito) e nas costas (orbe)
+  const drawAero=(x,m)=>{
+    const C=c=>m=='c'?c:'#fff';
+    // Frente: assinatura 'aero' centralizada no peito
+    front(x,1024,()=>{
+      x.save();x.translate(0,380);x.scale(1,2.07);
+      x.font='700 48px "Segoe UI",Arial,sans-serif';x.textAlign='center';x.textBaseline='middle';
+      x.fillStyle=C('#7fe0ff');x.fillText('aero',0,0);
+      x.strokeStyle=C('rgba(127,224,255,0.4)');x.lineWidth=2.5;x.beginPath();x.moveTo(-45,22);x.lineTo(45,22);x.stroke();
+      x.restore();
+    });
+    // Costas: grande orbe de basquete Aero centralizado
+    backP(x,1024,()=>{
+      x.save();x.translate(0,480);x.scale(1,2.07);
+      const g=x.createRadialGradient(-40,-48,10,0,0,125);g.addColorStop(0,'#eafcff');g.addColorStop(.4,'#4cc9ff');g.addColorStop(1,'#0b5fc0');
+      x.fillStyle=m=='c'?g:'#fff';x.beginPath();x.arc(0,0,118,0,6.283);x.fill();
+      x.strokeStyle=C('#ffffff');x.lineWidth=7;x.stroke();
+      x.save();x.beginPath();x.arc(0,0,110,0,6.283);x.clip();
+      x.lineWidth=8;x.strokeStyle=C('#e8fbff');
+      for(let k=0;k<3;k++){x.beginPath();x.moveTo(-120,10+k*34);x.bezierCurveTo(-50,-30+k*34,40,50+k*34,120,0+k*34);x.stroke()}
+      x.restore();
+      x.lineWidth=7;x.lineCap='round';x.strokeStyle=C('#ffffff');
+      x.beginPath();x.arc(0,14,50,Math.PI*1.08,Math.PI*1.92);x.stroke();
+      x.restore();
+    });
+  };
+
+  // Função para desenhar bolha individual com brilho e reflexo
+  const drawSingleBubble=(ctx,r,C)=>{
+    ctx.fillStyle=C('rgba(70,190,255,.32)');
+    ctx.beginPath();ctx.arc(0,0,r,0,6.283);ctx.fill();
+    ctx.strokeStyle=C('#1d8fe8');ctx.lineWidth=Math.max(2.5,r*0.16);ctx.stroke();
+    ctx.strokeStyle=C('#ffffff');ctx.lineWidth=Math.max(2.0,r*0.13);ctx.lineCap='round';
+    ctx.beginPath();ctx.arc(0,0,r*0.68,Math.PI*1.1,Math.PI*1.45);ctx.stroke();
+    ctx.fillStyle=C('rgba(255,255,255,0.7)');
+    ctx.beginPath();ctx.arc(r*0.42,r*0.42,r*0.12,0,6.283);ctx.fill();
+  };
+
+  // 2. Camiseta Bolhas — Apenas uma bolha pequena centralizada no peito; estampa completa centralizada nas costas
+  const drawBubbles=(x,m)=>{
+    const C=c=>m=='c'?c:'#fff';
+    // Frente: apenas uma bolha de forma pequena centralizada no peito
+    front(x,1024,()=>{
+      x.save();x.translate(0,360);x.scale(1,2.07);
+      drawSingleBubble(x,28,C);
+      x.restore();
+    });
+    // Costas: composição de bolhas e 'hoop' centralizada nas costas
+    backP(x,1024,()=>{
+      x.save();x.translate(0,480);x.scale(1,2.07);
+      const B=[[0,-70,62],[-70,20,38],[64,34,46],[8,110,26],[-24,-150,22]];
+      for(const[bx,by,br]of B){
+        x.save();x.translate(bx,by);
+        drawSingleBubble(x,br,C);
+        x.restore();
+      }
+      x.font='700 42px "Segoe UI",Arial,sans-serif';x.textAlign='center';x.textBaseline='middle';
+      x.fillStyle=C('#0b4f9e');x.fillText('hoop',0,168);
+      x.restore();
+    });
+  };
   const starPath=(x,R,r,rot,jit)=>{x.beginPath();for(let i=0;i<10;i++){const a=rot+i*Math.PI/5-Math.PI/2,rr=(i%2?r:R)*(1+(jit?Math.sin(i*7.1)*jit:0));x[i?'lineTo':'moveTo'](Math.cos(a)*rr,Math.sin(a)*rr)}x.closePath()};
 
   // 1. Estrela Y2K com órbita em crescente grunge (Foto 2)
@@ -3948,9 +3983,9 @@ function setPlayerHandPose(m, poseOrGun, dt = 0.016, o = null) {
   };
   const SHIRTS=[
     ...SHIRTS_Y2K,
-    {id:'aero',name:'AERO — Clássica Preta / Ciano',base:'#0b0b0e',sleeve:0x0e0e12,collar:0x08080a,draw:drawAero},
-    {id:'bolhas',name:'BOLHAS — Branca / Azul',base:'#f4f4f2',sleeve:0xf4f4f2,collar:0xe2e2e0,draw:drawBubbles},
-    {id:'orig',name:'AERO — Orbe (original)',tex:aeroDarkTex,sleeve:0x0b0b0e,collar:0x08080a}
+    {id:'aero',name:'AERO — Clássica Preta / Ciano',base:'#0b0b0e',sleeve:0x0e0e12,collar:0x08080a,centered:true,draw:drawAero},
+    {id:'bolhas',name:'BOLHAS — Branca / Azul',base:'#f4f4f2',sleeve:0xf4f4f2,collar:0xe2e2e0,centered:true,draw:drawBubbles},
+    {id:'orig',name:'AERO — Orbe (original)',tex:aeroDarkTex,sleeve:0x0b0b0e,collar:0x08080a,centered:true}
   ];
   const cache={};
   const canv=def=>{
