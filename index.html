@@ -2855,6 +2855,67 @@ function createRealisticStreetballPlayer(isAI) {
     for(let k=0;k<n;k++){idx.push(i0,k,(k+1)%n);idx.push(i1,(m-1)*n+(k+1)%n,(m-1)*n+k);}
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setIndex(idx);g.computeVertexNormals();return g;
   };
+
+  // ===== TÊNIS 3D v2: loft arredondado + sola em camadas + 4 modelos (Aero, AF1 Skeleton, Jordan 11 Low, Tatum) =====
+  const SHD={
+    aero:{name:'Aero Low',up:cfg.shoeMain,mid:cfg.shoeSole,out:cfg.shoeSole,acc:cfg.shoeAccent,lace:cfg.shoeMain,low:cfg.shoeAccent,lf:[.3,.55]},
+    skel:{name:'Esqueleto Roxo',up:0x3b1d78,mid:0xdcf5cc,out:0xdcf5cc,acc:0xe8ecf4,lace:0x3b1d78,glow:1,decal:1},
+    aj11:{name:'Galáxia Low',up:0x0b0b0e,mid:0xffffff,out:0xa9d8ff,acc:0x2347d8,lace:0x0b0b0e,low:0x050507,patent:1,lf:[.55,.95],ice:1},
+    aj11b:{name:'Blackout Low',up:0x08080a,mid:0x0c0c0f,out:0x2a2a30,acc:0x3a3a42,lace:0x08080a,low:0x030304,patent:1,lf:[.55,.95],ice:1},
+    tatum:{name:'Ice Wave',up:0x0d0d10,mid:0xf4f6f8,out:0xd4eeee,acc:0xff3a1c,lace:0x0d0d10,low:0xf4f6f8,lf:[.3,.8],ice:1,win:0xc8f542}
+  };
+  window.SHOE_DEFS=SHD;
+  const SHZ=[-.088,-.080,-.060,-.030,0,.030,.060,.090,.120,.148,.168,.178];
+  const SHW=[.026,.040,.047,.047,.045,.047,.052,.054,.052,.044,.030,.012];
+  const SHT=[.010,.014,.016,.004,-.012,-.026,-.034,-.040,-.046,-.054,-.058,-.060];
+  const shLoft=(rows,mat,k=1,n=14)=>{
+    const pos=[],idx=[];
+    for(const [z,hw,yb,yt] of rows){const h=yt-yb,cy=(yt+yb)/2;
+      for(let i=0;i<n;i++){const a=i/n*Math.PI*2,c=Math.cos(a),sn=Math.sin(a);
+        pos.push(Math.sign(c)*Math.pow(Math.abs(c),.55)*hw*k,cy+Math.sign(sn)*Math.pow(Math.abs(sn),.55)*h/2*(k>1?1.04:1),z);}}
+    for(let r=0;r<rows.length-1;r++)for(let i=0;i<n;i++){const a=r*n+i,b=r*n+(i+1)%n,c=a+n,d=b+n;idx.push(a,b,c,b,d,c);}
+    const m=rows.length,i0=pos.length/3;let c0=[0,0,0],c1=[0,0,0];
+    for(let i=0;i<n;i++)for(let j=0;j<3;j++){c0[j]+=pos[i*3+j]/n;c1[j]+=pos[((m-1)*n+i)*3+j]/n;}
+    pos.push(...c0,...c1);
+    for(let i=0;i<n;i++){idx.push(i0,(i+1)%n,i);idx.push(i0+1,(m-1)*n+i,(m-1)*n+(i+1)%n);}
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setIndex(idx);g.computeVertexNormals();
+    return new THREE.Mesh(g,mat);
+  };
+  const skelTex=(()=>{const c=document.createElement('canvas');c.width=256;c.height=96;const g=c.getContext('2d');
+    g.lineCap='round';g.strokeStyle=g.fillStyle='rgba(226,236,248,.95)';g.shadowColor='rgba(150,120,230,.9)';g.shadowBlur=7;
+    g.beginPath();g.ellipse(48,48,32,24,0,0,7);g.fill();
+    for(let i=0;i<5;i++){const y=22+i*13;g.lineWidth=8-i*.5;g.beginPath();g.moveTo(78,48+(i-2)*4);g.lineTo(150,y);g.stroke();
+      g.lineWidth=6-i*.4;g.beginPath();g.moveTo(158,y);g.lineTo(196,y);g.moveTo(204,y);g.lineTo(236-i*3,y);g.stroke();
+      for(const x of [154,200])g.beginPath(),g.arc(x,y,6-i*.3,0,7),g.fill();}
+    return new THREE.CanvasTexture(c)})();
+  const buildShoe=id=>{
+    const P=SHD[id],G=new THREE.Group();
+    const sm=(c,r,m)=>{const k=StylizedMat(c,r,m,false);k.side=THREE.DoubleSide;return k};
+    const mUp=sm(P.up,P.patent?.5:.55,.05),mMid=sm(P.mid,.6,.03),mOut=sm(P.out,P.ice?.2:.75,P.ice?.15:.03),mAcc=sm(P.acc,.4,.1),mLace=sm(P.lace,.8,0);
+    if(P.ice){mOut.transparent=true;mOut.opacity=.82}
+    if(P.glow&&mMid.emissive){mMid.emissive=new THREE.Color(0xb8ffa8).multiplyScalar(.3);mOut.emissive=new THREE.Color(0xb8ffa8).multiplyScalar(.3)}
+    const sp=z=>Math.max(0,z-.12)*.2;
+    const rowsUp=SHZ.map((z,i)=>[z,SHW[i],-.066,SHT[i]]);
+    const rowsMid=SHZ.map((z,i)=>[z,SHW[i]*1.07,-.080+sp(z),-.060+sp(z)*.9]);
+    const rowsOut=SHZ.map((z,i)=>[z,SHW[i]*1.06,-.092+sp(z)*1.2,-.078+sp(z)]);
+    G.add(shLoft(rowsUp,mUp),shLoft(rowsMid,mMid),shLoft(rowsOut,mOut));
+    if(P.low){const mLow=sm(P.low,P.patent?.1:.5,P.patent?.3:.05);
+      const rl=rowsUp.map(([z,hw,yb,yt],i)=>{const t=i/(SHZ.length-1),f=P.lf[0]+(P.lf[1]-P.lf[0])*t;return[z,hw,yb,yb+(yt-yb)*f]});
+      G.add(shLoft(rl,mLow,1.03));}
+    // língua, cadarços e colarinho
+    const tg=new THREE.Mesh(new THREE.BoxGeometry(.05,.006,.07),mUp);tg.position.set(0,-.004,.012);tg.rotation.x=.5;G.add(tg);
+    for(let i=0;i<5;i++){const z=-.012+i*.024,y=pw(z,SHZ.map((v,j)=>[v,SHT[j]]))+.003;
+      const l=new THREE.Mesh(new THREE.CylinderGeometry(.0035,.0035,.07-i*.004,5),mLace);l.rotation.z=Math.PI/2;l.position.set(0,y,z);G.add(l);}
+    const col=new THREE.Mesh(new THREE.TorusGeometry(.036,.006,5,12),id==='aero'?mAcc:mUp);col.rotation.x=Math.PI/2+.2;col.scale.set(1,1.25,1);col.position.set(0,-.004,-.014);G.add(col);
+    for(const sx of [1,-1]){
+      const lg=new THREE.Mesh(new THREE.SphereGeometry(1,8,6),mAcc);lg.scale.set(.002,.009,.02);lg.position.set(sx*.0545,-.052,.08);
+      if(id!=='skel')G.add(lg);
+      if(P.decal){const d=new THREE.Mesh(new THREE.PlaneGeometry(.15,.056),new THREE.MeshBasicMaterial({map:skelTex,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,side:THREE.DoubleSide}));
+        d.position.set(sx*.0525,-.05,.045);d.rotation.y=sx*Math.PI/2;if(sx>0)d.scale.x=-1;G.add(d);}
+      if(P.win){const w=new THREE.Mesh(new THREE.SphereGeometry(1,10,8),new THREE.MeshBasicMaterial({color:P.win}));w.scale.set(.003,.008,.026);w.position.set(sx*.0575,-.078,.01);G.add(w);}
+    }
+    return G;
+  };
   const shirtParts=[];const dress=m=>{m.visible=false;shirtParts.push(m);return m};
   const cargoParts=[];const dressCargo=m=>{m.visible=false;cargoParts.push(m);return m};
   const shortsTrimParts=[];const dressShorts=m=>{shortsTrimParts.push(m);return m};
@@ -3237,10 +3298,8 @@ function createRealisticStreetballPlayer(isAI) {
     const sock=createHumanSegment(0.16,mSock,true,t=>{const r=lerp(0.043,0.037,t);return[r,r*1.02,0,0]},20,6);sock.position.y=-0.23;kj.add(dressShorts(sock));
     const aj=new THREE.Group();aj.position.y=-0.39;kj.add(aj);aj.add(sphere(0.039,mSock,1.05,0.9,1.0));
     const fb=createBlenderOctahedralBone(0.17,0.018,1);fb.rotation.x=Math.PI/2-0.15;fb.position.set(0,-0.05,0);aj.add(fb);
-    aj.add(new THREE.Mesh(shoeGeo(SH_UP,1,0),mShoeMain));
-    aj.add(new THREE.Mesh(shoeGeo(SH_UP.slice(5),1.045,0.003),mShoeAccent));
-    aj.add(new THREE.Mesh(shoeGeo(SH_SOLE,1,0),mShoeSole));
-    const collarS=new THREE.Mesh(new THREE.TorusGeometry(0.036,0.005,4,10),mShoeAccent);collarS.rotation.x=Math.PI/2+0.2;collarS.scale.set(1,1.25,1);collarS.position.set(0,-0.006,-0.012);aj.add(collarS);
+    const shoeSet={aj,build:buildShoe,cache:{aero:buildShoe('aero')},cur:'aero'};aj.add(shoeSet.cache.aero);
+    (root.shoeSets=root.shoeSets||[]).push(shoeSet);
     hj.kn=kj;kj.ft=aj;return hj;
   };
   root.tL=buildLeg(0.088,true);root.tR=buildLeg(-0.088,false);
@@ -3332,6 +3391,7 @@ function createRealisticStreetballPlayer(isAI) {
   return root;
 }
 
+const SHOE_IDS = ['aero', 'skel', 'aj11', 'aj11b', 'tatum'];
 function setPlayerPantsMode(p, mode) {
   if (!p) return;
   const isStyle = typeof mode === 'string' && mode.startsWith('style:');
@@ -3340,6 +3400,18 @@ function setPlayerPantsMode(p, mode) {
   if (p.cargoParts) for (const m of p.cargoParts) m.visible = isCargo;
   if (p.shortsTrimParts) for (const m of p.shortsTrimParts) m.visible = !isCargo;
   if (window.applyPantsStyle) window.applyPantsStyle(p, isStyle ? mode.slice(6) : 'cargo');
+}
+
+function setPlayerShoes(p, id) {
+  if (!p || !p.shoeSets) return;
+  if (!SHOE_IDS.includes(id)) id = 'aero';
+  p.shoeId = id;
+  for (const set of p.shoeSets) {
+    if (set.cur === id) continue;
+    if (set.cur) set.aj.remove(set.cache[set.cur]);
+    const g = set.cache[id] || (set.cache[id] = set.build(id));
+    set.aj.add(g); set.cur = id;
+  }
 }
 
 const mP = createRealisticStreetballPlayer(false);
@@ -4081,14 +4153,15 @@ function setPlayerHandPose(m, poseOrGun, dt = 0.016, o = null) {
       "<div style='font-size:10px;opacity:.65;margin-top:6px;text-align:center;'>💡 Arraste o mouse/dedo na tela para girar livremente</div>"+
     "</div>"+
     "<div style='opacity:.7;font-size:12px;margin-bottom:12px'>Escolha suas peças para a quadra.</div>"+
-    "<div class='tabs'><span id='tab-shirts' class='on'>Camisetas (Oversized)</span><span id='tab-pants'>Calças / Bermudas</span></div>"+
-    "<div id='wl-shirts'></div><div id='wl-pants' style='display:none'></div>"+
+    "<div class='tabs'><span id='tab-shirts' class='on'>Camisetas (Oversized)</span><span id='tab-pants'>Calças / Bermudas</span><span id='tab-shoes'>Tênis</span></div>"+
+    "<div id='wl-shirts'></div><div id='wl-pants' style='display:none'></div><div id='wl-shoes' style='display:none'></div>"+
     "<button id='wl-save' class='done' style='margin-top:16px;width:100%;padding:12px;border-radius:10px;border:0;background:linear-gradient(180deg,#8f0b27,#6D001A);color:#fff;font:700 15px system-ui;cursor:pointer;'>Salvar e voltar</button>";
   document.body.append(pn);
   const wlShirts=pn.querySelector('#wl-shirts'),wlPants=pn.querySelector('#wl-pants');
   const tabShirts=pn.querySelector('#tab-shirts'),tabPants=pn.querySelector('#tab-pants');
-  tabShirts.onclick=()=>{tabShirts.classList.add('on');tabPants.classList.remove('on');wlShirts.style.display='block';wlPants.style.display='none'};
-  tabPants.onclick=()=>{tabPants.classList.add('on');tabShirts.classList.remove('on');wlPants.style.display='block';wlShirts.style.display='none'};
+  const wlShoes=pn.querySelector('#wl-shoes'),tabShoes=pn.querySelector('#tab-shoes');
+  const tabSets=[[tabShirts,wlShirts],[tabPants,wlPants],[tabShoes,wlShoes]];
+  for(const [t,w] of tabSets)t.onclick=()=>{for(const [t2,w2] of tabSets){t2.classList.toggle('on',t2===t);w2.style.display=w2===w?'block':'none'}};
 
   const shirtCards=[],pantsCards=[];
   const thumb=(src,cx)=>{const c=document.createElement('canvas');c.width=140;c.height=136;c.getContext('2d').drawImage(src,cx-200,150,400,800,0,0,140,136);return c};
@@ -4108,12 +4181,13 @@ function setPlayerHandPose(m, poseOrGun, dt = 0.016, o = null) {
   };
 
   // Carrega e gerencia o figurino do jogador no localStorage para sincronizar online
-  window.myOutfit = { shirt: 'blessed', pants: 'style:neveryoung' };
+  window.myOutfit = { shirt: 'blessed', pants: 'style:neveryoung', shoes: 'aero' };
   try {
     const svO = JSON.parse(localStorage.getItem('aerohoop-outfit-v1') || 'null');
     if (svO && typeof svO === 'object') {
       if (svO.shirt !== undefined) myOutfit.shirt = svO.shirt;
       if (svO.pants !== undefined) myOutfit.pants = svO.pants;
+      if (svO.shoes !== undefined) myOutfit.shoes = svO.shoes;
     }
   } catch (e) {}
 
@@ -4197,9 +4271,27 @@ function setPlayerHandPose(m, poseOrGun, dt = 0.016, o = null) {
   });
   wlPants.appendChild(shortsCard);pantsCards.push(shortsCard);
 
+  // Itens de Tênis
+  const shoeCards=[];
+  const shoePrev=d=>{const c=document.createElement('canvas');c.width=280;c.height=120;c.className='full';const x=c.getContext('2d');
+    const h=n=>'#'+n.toString(16).padStart(6,'0');x.fillStyle='#161b26';x.fillRect(0,0,280,120);
+    x.fillStyle=h(d.out);x.beginPath();x.roundRect(40,86,200,12,6);x.fill();
+    x.fillStyle=h(d.mid);x.beginPath();x.roundRect(40,70,200,18,6);x.fill();
+    x.fillStyle=h(d.up);x.beginPath();x.moveTo(44,72);x.lineTo(46,34);x.quadraticCurveTo(70,24,96,40);x.quadraticCurveTo(140,60,190,56);x.quadraticCurveTo(240,56,242,72);x.closePath();x.fill();
+    if(d.low){x.fillStyle=h(d.low);x.beginPath();x.moveTo(44,72);x.lineTo(45,54);x.quadraticCurveTo(140,68,200,52);x.quadraticCurveTo(240,54,242,72);x.closePath();x.fill()}
+    x.fillStyle=h(d.acc);x.beginPath();x.arc(150,66,5,0,7);x.fill();return c};
+  for(const id of SHOE_IDS){
+    const d=SHOE_DEFS[id],card=document.createElement('div');
+    card.className='wc'+(myOutfit.shoes===id?' on':'');
+    card.innerHTML='<b>'+d.name+'</b>';card.appendChild(shoePrev(d));
+    card.onclick=()=>{shoeCards.forEach(c=>c.classList.remove('on'));card.classList.add('on');myOutfit.shoes=id;setPlayerShoes(mP,id);window.saveMyOutfit()};
+    wlShoes.appendChild(card);shoeCards.push(card);
+  }
+
   // Aplica o figurino salvo no jogador local P1:
   window.applyPlayerShirt(mP, myOutfit.shirt);
   setPlayerPantsMode(mP, myOutfit.pants);
+  setPlayerShoes(mP, myOutfit.shoes);
 
   // CPU ou segundo jogador com modelos iniciais:
   if (mA) {
@@ -4207,11 +4299,11 @@ function setPlayerHandPose(m, poseOrGun, dt = 0.016, o = null) {
     setPlayerPantsMode(mA, 'style:neveryoung');
   }
   if (mTM) {
-    window.applyPlayerShirt(mTM, 'aranha');
+    window.applyPlayerShirt(mTM, 'aranha'); setPlayerShoes(mTM, 'aj11');
     setPlayerPantsMode(mTM, 'style:neveryoung');
   }
   if (mA2) {
-    window.applyPlayerShirt(mA2, 'blessed');
+    window.applyPlayerShirt(mA2, 'blessed'); setPlayerShoes(mA2, 'tatum');
     setPlayerPantsMode(mA2, 'style:neveryoung');
   }
 
@@ -4546,7 +4638,7 @@ function mkPlayer(x, y) {
     dr: 0, cr: 0,
     ry: Math.PI,
     z: {},
-    steal: 0, block: 0,
+    steal: 0, block: 0, cut: 0, dd: 0,
     dunk: 0, dunkType: 0, dunkScored: false,
     layup: 0, layupType: 0, layupScored: false,
     landing: 0, landingImpact: 0,
@@ -4645,6 +4737,7 @@ function applyRemoteClothes(p, c) {
   if (c.shirt !== undefined && window.applyPlayerShirt) {
     window.applyPlayerShirt(p, c.shirt);
   }
+  if (c.shoes !== undefined) setPlayerShoes(p, c.shoes);
   if (c.pants !== undefined && window.setPlayerPantsMode) {
     setPlayerPantsMode(p, c.pants);
   }
@@ -4662,13 +4755,13 @@ function netSendCustomization() {
   const payload = {
     t: 'custom',
     f: faceCfg,
-    c: (window.myOutfit || { shirt: 'blessed', pants: 'style:neveryoung' }),
+    c: (window.myOutfit || { shirt: 'blessed', pants: 'style:neveryoung', shoes: 'aero' }),
     n: (MY_NICK || 'PLAYER')
   };
   netSend(payload);
   // Pacotes individuais para compatibilidade e redundância
   netSend({ t: 'face', f: faceCfg });
-  netSend({ t: 'clothes', c: (window.myOutfit || { shirt: 'blessed', pants: 'style:neveryoung' }) });
+  netSend({ t: 'clothes', c: (window.myOutfit || { shirt: 'blessed', pants: 'style:neveryoung', shoes: 'aero' }) });
   netSend({ t: 'nick', n: MY_NICK });
 }
 window.netSendCustomization = netSendCustomization;
@@ -4683,7 +4776,7 @@ function netClose() {
   clearTimeout(NET.connTimer);
   try { if (NET.conn) NET.conn.close(); } catch (e) {}
   try { if (NET.peer) NET.peer.destroy(); } catch (e) {}
-  NET.role = null; NET.live = false; NET.swapped = false; NET.conn = null; NET.peer = null; NET.snap = null;
+  NET.role = null; NET.live = false; NET.swapped = false; NET.conn = null; NET.peer = null; NET.snap = null; NET.sf = null; NET.last = null; pendR = 0;
   NET.rin = { K: {}, yaw: Math.PI }; NET.rcharge = null;
   netStatus(netIdleText());
   NET.opNick = null; refreshNames();
@@ -4781,7 +4874,7 @@ function netJoin() {
   peer.on('error', e => { if (NET.peer !== peer) return; clearTimeout(NET.connTimer); netStatus(netErrText(e)); NET.role = null; });
   peer.on('disconnected', () => { try { if (NET.peer === peer && !peer.destroyed) peer.reconnect(); } catch (e) {} });
   peer.on('open', () => {
-    const c = peer.connect(NET_PREFIX + code, { reliable: true });
+    const c = peer.connect(NET_PREFIX + code, { reliable: true, serialization: 'json' });
     NET.conn = c;
     netWatchConn(c, 'guest');
     c.on('open', () => {
@@ -4805,6 +4898,7 @@ function netDropped() {
 
 /* ---- HOST ---- */
 function netSetupHost(c) {
+  NET.last = null; pendR = 0;
   c.on('data', m => {
     if (!m) return;
     if (m.t === 'in') { NET.rin.K = m.K || {}; NET.rin.yaw = +m.y || 0; }
@@ -4861,9 +4955,17 @@ function netTick(dt) {
   NET.acc += dt;
   if (NET.acc < 0.033) return;
   NET.acc = 0;
+  // delta: só envia campos que mudaram (arredondados); snapshot completo a cada ~4 s p/ ressincronizar
+  if (!NET.last || (NET.tickN = (NET.tickN || 0) + 1) % 120 === 0) NET.last = {};
+  const dl = (name, o) => {
+    if (!o) return null;
+    const full = netPick(o), last = NET.last[name] || (NET.last[name] = {}), d = {};
+    for (const k in full) { let v = full[k]; if (typeof v === 'number') v = Math.round(v * 1000) / 1000; if (last[k] !== v) { last[k] = v; d[k] = v; } }
+    return d;
+  };
   netSend({
-    t: 's', P: netPick(P), A: netPick(A), B: netPick(B),
-    TM: TM ? netPick(TM) : null, A2: A2 ? netPick(A2) : null,
+    t: 's', P: dl('P', P), A: dl('A', A), B: dl('B', B),
+    TM: dl('TM', TM), A2: dl('A2', A2),
     bo: !B.owner ? null : (B.owner === P ? 'p' : (B.owner === A ? 'a' : (TM && B.owner === TM ? 't' : (A2 && B.owner === A2 ? 'u' : null)))),
     poss, sc: { p: score.p, a: score.a }, dt: deadT, rs: rimShake,
     ch: NET.rcharge ? NET.rcharge.t : null
@@ -4878,11 +4980,15 @@ function netSetupGuest(c) {
   setTimeout(netSendCustomization, 1600);
   netSend({ t: 'mode', m: MODE });
   // envia as teclas pressionadas e a direção da câmera ~30x por segundo
+  NET.sf = null; let lastIn = '', lastSent = 0;
   NET.timer = setInterval(() => {
     if (NET.role !== 'guest') { clearInterval(NET.timer); return; }
     const k = {}; for (const x in K) if (K[x]) k[x] = true;
-    netSend({ t: 'in', K: k, y: yaw });
-  }, 33);
+    const sig = JSON.stringify(k) + '|' + yaw.toFixed(3), now = performance.now();
+    if (sig === lastIn && now - lastSent < 250) return;       // só envia quando muda (ou como batimento a cada 250 ms)
+    lastIn = sig; lastSent = now;
+    netSend({ t: 'in', K: k, y: Math.round(yaw * 1000) / 1000 });
+  }, 16);
 }
 
 function netMapMsg(m) {
@@ -4895,7 +5001,12 @@ function netMapMsg(m) {
 
 function netGuestData(m) {
   if (!m) return;
-  if (m.t === 's') { NET.snap = m; NET.fresh = true; }
+  if (m.t === 's') {
+    const S = NET.sf || (NET.sf = {});
+    for (const k of ['P', 'A', 'B', 'TM', 'A2']) { if (m[k] === null) S[k] = null; else if (m[k]) S[k] = Object.assign(S[k] || {}, m[k]); }
+    for (const k of ['bo', 'poss', 'sc', 'dt', 'rs', 'ch']) S[k] = m[k];
+    NET.snap = S; NET.fresh = true; NET.snapT = performance.now();
+  }
   else if (m.t === 'custom') applyRemoteCustomization(mA, m);
   else if (m.t === 'face') applyFace(mA, m.f);
   else if (m.t === 'clothes') applyRemoteClothes(mA, m.c);
@@ -4916,13 +5027,16 @@ function guestStep(dt) {
   const sn = NET.snap;
   if (!sn || !P || !A) return;
   const k = 1 - Math.exp(-24 * dt);
+  const age = cl((performance.now() - (NET.snapT || 0)) / 1000, 0, 0.1);   // tempo desde o último snapshot
   const ap = (dst, src, lerpKeys) => {
     for (const key in src) {
       if (key === 'ry' || key === 'z' && dst === P) continue;
       const v = src[key];
       if (lerpKeys && lerpKeys.includes(key) && typeof v === 'number') {
-        const d = v - dst[key];
-        dst[key] = (!isFinite(d) || Math.abs(d) > 70) ? v : dst[key] + d * k;
+        let tv = v;
+        if ((key === 'x' || key === 'y') && !(dst === B && sn.B && sn.B.s === 'held')) { const vv = src[key === 'x' ? 'vx' : 'vy']; if (typeof vv === 'number') tv += vv * age; }
+        const d = tv - dst[key];
+        dst[key] = (!isFinite(d) || Math.abs(d) > 70) ? tv : dst[key] + d * k;
       } else if (key !== 'z' || dst === B) dst[key] = v;
     }
   };
@@ -4937,6 +5051,7 @@ function guestStep(dt) {
   deadT = sn.dt; rimShake = sn.rs;
   charge = sn.ch == null ? null : { t: sn.ch };
   fl = null;
+  { const gH = B.s === 'held' && B.owner === P; P.dr = (gH && K.KeyC) ? 1 : 0; P.dd = (K.KeyC && !gH) ? 1 : 0; }   // postura de C responde na hora no convidado
   if (NET.fresh) { NET.fresh = false; updateScorebug(); updateStaminaHUD(); }
   msgT -= dt;
 }
@@ -5378,7 +5493,7 @@ function passBall(from, to) {
 }
 
 // Roubo rápido: braço estende em ~0.07s, TOCA na bola (contato) e só então o resultado é aplicado
-const STEAL_DUR = 0.46, STEAL_CONTACT = 0.12;
+const STEAL_DUR = 0.46 * 1.3, STEAL_CONTACT = 0.12 * 1.3;   // bote 30% mais lento
 function stealReach(o) {
   const sp = 1 - o.steal / STEAL_DUR;
   const ext = 1 - Math.pow(1 - cl((sp - 0.14) / 0.12, 0, 1), 2.2);
@@ -5403,6 +5518,7 @@ function stealExposure(H, S) {
 // Situações reais em que a bola fica vulnerável (multiplica a chance de roubo)
 function stealSituation(H, S) {
   let m = 1;
+  if (H.dr) m *= 1.5;                                         // postura de drible (C): bola mais exposta, 50% mais fácil de roubar
   const gathering = (H === P && !!charge) || (fl && fl.phase === 'windup' && fl.shooter === H);
   if (gathering) m *= 1.55;                                   // bola armada para o arremesso: dá para raspar/tapar por baixo
   if (H.stopT > 0 || H.pivotT > 0) m *= 1.35;                 // drible morto / freada / pivô: bola presa e lenta
@@ -5585,7 +5701,7 @@ function gameKeyDown(code) {
   if (code === 'KeyB' && !NET.swapped) toggleRigBones();
   if (code === 'KeyQ') triggerDribbleMove('c');
   if (code === 'KeyF') triggerDribbleMove('s');
-  if (stance() && !NET.swapped && ['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(code)) sMove();
+  if (stance() && ['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(code)) sMove();
 }
 
 addEventListener('keyup', e => {
@@ -5596,7 +5712,7 @@ addEventListener('keyup', e => {
 });
 
 function gameKeyUp(code) {
-  if (code === 'KeyC' && !NET.swapped) pend = 0;
+  if (code === 'KeyC') { if (NET.swapped) pendR = 0; else pend = 0; }
   if (code === 'Space' && charge) {
     const t = charge.t;
     charge = null;
@@ -5617,10 +5733,10 @@ addEventListener('mousemove', e => {
   }
 });
 
-addEventListener('blur', () => { for (const k in K) K[k] = false; pend = 0; });
+addEventListener('blur', () => { for (const k in K) K[k] = false; pend = 0; pendR = 0; });
 
-let pend = 0;
-function sMove() { if (!pend) pend = performance.now() + 60; }
+let pend = 0, pendR = 0;   // pend = jogador local, pendR = jogador remoto (convidado) no anfitrião
+function sMove() { if (NET.swapped) { if (!pendR) pendR = performance.now() + 60; } else if (!pend) pend = performance.now() + 60; }
 
 function canExecuteDribble(o, cost) {
   if (o.exhausted || o.stamina < cost) {
@@ -5630,7 +5746,7 @@ function canExecuteDribble(o, cost) {
 }
 
 function sResolve() {
-  pend = 0;
+  if (NET.swapped) pendR = 0; else pend = 0;
   if (!stance() || charge || deadT > 0 || over || P.lock > 0 || P.cx > 0 || P.spin > 0 || P.sb > 0 || P.sd > 0 || P.bb > 0) return;
   const w = K.KeyW, sb = K.KeyS, a = K.KeyA, d = K.KeyD;
   const dir = d ? 1 : -1;
@@ -5976,8 +6092,57 @@ function handleRimAndBackboardPhysics(dt) {
   }
 }
 
+// ===== DEFESA COM C: bloqueio automático só quando a bola vem na direção do jogador =====
+function deflectBall(d, kind) {
+  const a = Math.atan2(B.y - d.y, B.x - d.x);
+  fl = null; B.s = 'loose'; B.owner = null; B.passer = null; B.passT = 0; B.nopick = 0.30;
+  if (kind === 'block') {            // TOCO: bola alta é cravada para baixo/longe
+    B.vx = Math.cos(a) * 145 + d.vx * 0.4; B.vy = Math.sin(a) * 145 + d.vy * 0.4;
+    B.vz = 95; B.z = Math.max(72, B.z);
+    say('TOCO!', 1.1, 'good');
+  } else {                           // CORTE: bola baixa é desviada para o lado
+    const a2 = a + (d.cutSide > 0 ? -1 : 1) * 0.95;
+    B.vx = Math.cos(a2) * 125 + d.vx * 0.3; B.vy = Math.sin(a2) * 125 + d.vy * 0.3;
+    B.vz = 30; B.z = Math.min(B.z, 38);
+    say('CORTE!', 1.0, 'good');
+  }
+  if (typeof audio !== 'undefined') audio.playBackboardHit(kind === 'block' ? 0.9 : 0.55);
+}
+function autoBlockStep(dt) {
+  const pd = P.blkPend;
+  if (pd) {
+    pd.t -= dt;
+    if (pd.t <= 0) {
+      P.blkPend = null;
+      const near = Math.hypot(B.x - P.x, B.y - P.y) < 50 && (B.s === 'flight' || B.s === 'loose');
+      if (near && (pd.kind === 'block' ? B.z > 30 : B.z < 66)) deflectBall(P, pd.kind);
+    }
+    return;
+  }
+  if (!P.dd || P.block > 0 || P.cut > 0 || P.steal > 0 || P.lock > 0 || P.dunk > 0 || P.layup > 0 || deadT > 0 || over || P.exhausted || P.stamina < 10) return;
+  const myT = teamOf(P);
+  const oppShot = B.s === 'flight' && fl && fl.who !== myT && Math.hypot(B.x - HX, B.y - HY) > 45;
+  const oppPass = B.s === 'loose' && !B.owner && B.passer && teamOf(B.passer) !== myT;
+  if (!oppShot && !oppPass) return;
+  const sp = Math.hypot(B.vx, B.vy);
+  if (sp < 110) return;
+  const rx = P.x - B.x, ry = P.y - B.y, tca = (rx * B.vx + ry * B.vy) / (sp * sp);
+  if (tca < 0.02 || tca > 0.30) return;                                   // precisa estar vindo na direção dele
+  if (Math.hypot(rx - B.vx * tca, ry - B.vy * tca) > 26) return;           // e passar perto
+  const zAt = B.z + B.vz * tca - 0.5 * GRAVITY * tca * tca;
+  if (zAt < 6 || zAt > 100) return;
+  const kind = zAt >= 48 ? 'block' : 'cut';
+  drainStamina(P, kind === 'block' ? 12 : 8, 0.5);
+  face(P, B.x, B.y);
+  if (kind === 'block') { P.block = 0.68; P.lock = 0.22; }
+  else { P.cut = 0.40; P.cutSide = stealSideFor(P, B.x, B.y); }
+  P.blkPend = { kind, t: Math.max(0.04, tca - 0.05) };
+}
+
 function humanControlStep(dt) {
   P.dr = stance() ? 1 : 0;
+  P.dd = (K.KeyC && !(B.s === 'held' && B.owner === P) && deadT <= 0 && !over) ? 1 : 0;
+  autoBlockStep(dt);
 
   const isDribblingMove = P.cx > 0 || P.spin > 0 || P.sb > 0 || P.sd > 0 || P.bb > 0;
   const sprintingNow = (K.ShiftLeft || K.ShiftRight) && P.mv && !P.exhausted && deadT <= 0;
@@ -5997,6 +6162,7 @@ function humanControlStep(dt) {
   updateStaminaHUD();
 
   if (pend && !NET.swapped && performance.now() >= pend) sResolve();
+  if (pendR && NET.live && !NET.swapped && performance.now() >= pendR) withRemote(() => sResolve());
   if (!NET.swapped) msgT -= dt;
   if (over) return true;
 
@@ -6317,6 +6483,7 @@ function updatePhysicsStep(dt) {
       else if (o.steal <= 0) o.stealPend = null;
     }
     o.block = Math.max(0, o.block - dt);
+    o.cut = Math.max(0, (o.cut || 0) - dt);
     o.dunk = Math.max(0, o.dunk - dt);
     o.layup = Math.max(0, o.layup - dt);
     o.landing = Math.max(0, o.landing - dt);
@@ -6707,7 +6874,7 @@ function syncBiomechanics(o, m, dt, t) {
     return;
   }
   const hasB = B.s === 'held' && B.owner === o;
-  const def = poss && ((poss === 'p') !== (teamOf(o) === 'p'));
+  const def = (poss && ((poss === 'p') !== (teamOf(o) === 'p'))) || (o.dd > 0 && !hasB);
   const amp = cl(o.v / 165, 0, 1.12);
   const runK = smoothstep((o.v - 60) / 115);   // 0 = andando, 1 = correndo
   const sprK = smoothstep((o.v - 150) / 85);   // 0..1 = sprint
@@ -6798,6 +6965,8 @@ function syncBiomechanics(o, m, dt, t) {
   } else if (o.block > 0) {
     const bp = 1 - o.block / 0.68;
     jumpY = 0.78 * Math.sin(Math.PI * cl(bp * 1.12, 0, 1)) * jumpStaminaScale;
+  } else if (o.cut > 0) {
+    crouchOffset = -0.11 * Math.sin(Math.PI * cl(1 - o.cut / 0.40, 0, 1));
   } else if (isGathering) {
     const gp = cl(charge.t / 0.85, 0, 1);
     if (gp < 0.45) crouchOffset = -0.17 * Math.sin((gp / 0.45) * Math.PI * 0.5);
@@ -6817,14 +6986,14 @@ function syncBiomechanics(o, m, dt, t) {
 
   const targetCrouch = (def || dr) ? 1.0 : (hasB ? 0.62 : 0.18);
   o.cr = damp(o.cr, targetCrouch, 10, dt);
-  const stanceDip = o.cr * (dr ? 0.11 : (def ? 0.13 : 0.09)) + cxs * 0.13 + sds * 0.11 + bbs * 0.09 + legArr * 0.15 + stopDip + pivotDip + burstDip;
+  const stanceDip = (o.dd > 0 ? 0.04 : 0) + o.cr * (dr ? 0.11 : (def ? 0.13 : 0.09)) + cxs * 0.13 + sds * 0.11 + bbs * 0.09 + legArr * 0.15 + stopDip + pivotDip + burstDip;
   // quique: na caminhada o quadril sobe no apoio (arco invertido); na corrida desce no apoio (mola) e sobe na fase de voo
   const gaitBob = (jumpY <= 0.01)
     ? lerp((1 - Math.abs(Math.sin(ph))) * 0.020 - 0.010, Math.abs(Math.sin(ph)) * 0.060 * (1 + 0.4 * sprK) - 0.027, runK) * amp
     : 0;
 
   // Fator de transição suave para quando o boneco está parado ou se movendo devagar (1 = parado, 0 = correndo)
-  const isActionLocked = isCelebrating || isGathering || isShooting || o.dunk > 0 || o.layup > 0 || o.block > 0 || o.steal > 0;
+  const isActionLocked = isCelebrating || isGathering || isShooting || o.dunk > 0 || o.layup > 0 || o.block > 0 || o.steal > 0 || o.cut > 0;
   const idleFactor = isActionLocked ? 0 : cl(1 - amp * 1.35, 0, 1);
   const pSeed = me ? 0.0 : 2.15;
 
@@ -6967,10 +7136,19 @@ function syncBiomechanics(o, m, dt, t) {
     targetChestRy = -0.16;
   }
 
-  pelvis.rotation.x = T('pelRx', targetPelvisRx, 15);
+  const leanK = (o.dunk > 0 || o.layup > 0 || isCelebrating) ? 0 : cl((0.12 - m.position.y) / 0.1, 0, 1);   // inclinação de jogador profissional
+  pelvis.rotation.x = T('pelRx', targetPelvisRx + 0.16 * leanK, 15);
   pelvis.rotation.y = T('pelRy', strideWave * (0.14 + 0.07 * runK) - localRight * 0.18 + (isCelebrating ? 0.12 : 0), 15 + 22 * runK);
   pelvis.rotation.z = T('pelRz', targetPelvisRz, 15 + 20 * runK);
 
+  // TORSO NATURAL (só em deslocamento/defesa/drible; não mexe em arremesso, bandeja, enterrada, comemoração)
+  const calmPose = !(o.dunk > 0 || o.layup > 0 || isShooting || isGathering || isCelebrating || o.block > 0 || o.steal > 0 || o.cut > 0);
+  if (calmPose) {
+    const gndT = cl((0.12 - m.position.y) / 0.1, 0, 1);
+    targetChestRx += (0.16 + 0.06 * idleFactor) * gndT;                       // peito levemente à frente, ombros caídos
+    targetChestRy -= strideWave * 0.05 * gndT;                              // reforço leve: ombros contra o quadril
+    targetPelvisRz *= 0.8;
+  }
   waist.rotation.x = T('wstRx', targetChestRx * 0.45, 15);
   waist.rotation.y = T('wstRy', targetChestRy * 0.45, 15 + 22 * runK);
   waist.rotation.z = T('wstRz', targetPelvisRz * 0.38, 15);
@@ -7181,6 +7359,14 @@ function syncBiomechanics(o, m, dt, t) {
     ankleR_x = -hipR_x * 0.55 - kneeR_x * 0.42 - pelvis.rotation.x * 0.5 + (lead > 0 ? 0 : 0.30 * k);
   }
 
+  // POSTURA DE BASQUETE: joelhos e quadril mais flexionados, base um pouco mais aberta
+  const gndW = cl((0.12 - m.position.y) / 0.1, 0, 1);
+  {
+    const stance = (0.23 + 0.10 * idleFactor + (def ? 0.06 : 0) + (hasB ? 0.04 : 0)) * gndW;
+    hipL_x += -stance + 0.16 * leanK; hipR_x += -stance + 0.16 * leanK;
+    kneeL_x += stance * 1.85; kneeR_x += stance * 1.85;
+    hipL_z += 0.03 * gndW; hipR_z -= 0.03 * gndW;
+  }
   // resposta mais rápida na corrida para a perna acompanhar o ciclo sem perder amplitude nem atrasar
   const legSp = 18 + 32 * runK;
   m.tL.rotation.set(T('hipLx', hipL_x, legSp), T('hipLy', hipL_y, 16 + 14 * runK), T('hipLz', hipL_z, 16 + 14 * runK));
@@ -7189,6 +7375,32 @@ function syncBiomechanics(o, m, dt, t) {
   m.tR.kn.rotation.x = T('kneeRx', kneeR_x, legSp + 2);
   m.tL.kn.ft.rotation.x = T('ankLx', ankleL_x, legSp + 2);
   m.tR.kn.ft.rotation.x = T('ankRx', ankleR_x, legSp + 2);
+  // CONTATO COM O CHÃO: o tênis nunca atravessa o piso; pé apoiado fica plano e o quadril desce/sobe conforme a flexão
+  {
+    const SOLE = [[0, -.092, -.085], [0, -.092, .11], [.05, -.092, .05], [-.05, -.092, .05], [0, -.082, .176]];
+    const _p = (m._gp = m._gp || new THREE.Vector3());
+    const link = n => { n.updateMatrix(); n.matrixWorld.multiplyMatrices(n.parent.matrixWorld, n.matrix); };
+    const solve = () => {
+      m.updateMatrix();
+      if (m.parent) m.matrixWorld.multiplyMatrices(m.parent.matrixWorld, m.matrix); else m.matrixWorld.copy(m.matrix);
+      link(pelvis);
+      for (const lg of [m.tL, m.tR]) { link(lg); link(lg.kn); link(lg.kn.ft); }
+    };
+    const lowOf = ft => { let mn = 1e9; for (const q of SOLE) { _p.set(q[0], q[1], q[2]).applyMatrix4(ft.matrixWorld); if (_p.y < mn) mn = _p.y; } return mn; };
+    const pitchOf = ft => { _p.set(0, 0, 1).transformDirection(ft.matrixWorld); return Math.asin(cl(_p.y, -1, 1)); };
+    const fL = m.tL.kn.ft, fR = m.tR.kn.ft;
+    solve();
+    const lL = lowOf(fL), lR = lowOf(fR), base = Math.min(lL, lR);
+    const pL = pitchOf(fL), pR = pitchOf(fR);
+    const plL = cl((0.07 - (lL - base)) / 0.05, 0, 1) * gndW, plR = cl((0.07 - (lR - base)) / 0.05, 0, 1) * gndW;
+    fL.rotation.x += pL * plL; fR.rotation.x += pR * plR;   // pé apoiado fica paralelo ao piso
+    link(fL); link(fR);
+    const low = Math.min(lowOf(fL), lowOf(fR));
+    const want = low < 0 ? -low : -low * gndW;               // sobe na hora se atravessar; desce suave quando apoiado
+    m._gcorr = want >= (m._gcorr || 0) || low < 0 ? want : (m._gcorr || 0) + (want - (m._gcorr || 0)) * 0.4;
+    if (!isFinite(m._gcorr)) m._gcorr = 0;
+    pelvis.position.y += m._gcorr;
+  }
   // Tecido da calça acompanha a articulação: estica sobre a patela e amontoa atrás do joelho
   for (const leg of [m.tL, m.tR]) {
     const kj = leg.kn;
@@ -7385,6 +7597,19 @@ function syncBiomechanics(o, m, dt, t) {
     wR_x = -0.10; wL_x = -0.10;
     wR_y = 0.08; wL_y = -0.08;
     handMode = 'def_active';
+  } else if (o.cut > 0) {
+    // CORTE (bola baixa): o braço do lado da bola varre de cima para baixo e para fora, cortando a trajetória; o outro protege
+    const cp = 1 - o.cut / 0.40;
+    const kk = smoothstep(cl((cp - 0.12) / 0.34, 0, 1)) * (1 - smoothstep(cl((cp - 0.62) / 0.38, 0, 1)));
+    const ax = lerp(-1.30, -0.35, kk), az = lerp(0.18, 0.82, kk), ee = lerp(0.85, 0.28, kk);
+    handMode = 'def_active';
+    if (o.cutSide > 0) {
+      aR_x = ax; aR_z = -az; eR_x = ee; wR_x = -0.30 * kk; wR_y = 0.20;
+      aL_x = -0.70; aL_z = 0.50; eL_x = 1.05; wL_y = -0.20;
+    } else {
+      aL_x = ax; aL_z = az; eL_x = ee; wL_x = -0.30 * kk; wL_y = -0.20;
+      aR_x = -0.70; aR_z = -0.50; eR_x = 1.05; wR_y = 0.20;
+    }
   } else if (o.steal > 0) {
     // Ataque rápido: o braço do lado da bola dispara, estende e dá um tapa (flick de punho) no contato
     const reach = stealK;
@@ -7622,6 +7847,21 @@ function syncBiomechanics(o, m, dt, t) {
     }
   }
 
+  if (calmPose) {
+    // limites de ombro/cotovelo/punho de um ser humano: sem braço travado reto, sem abertura exagerada, sem punho torcido
+    const gA = cl((0.12 - m.position.y) / 0.1, 0, 1);
+    if (def && !hasB) {                                    // defesa: mãos levantadas à frente, menos "braços de avião"
+      aL_z *= 0.82; aR_z *= 0.82;
+      aL_x -= 0.14 * gA; aR_x -= 0.14 * gA;
+      eL_x = Math.max(eL_x, 1.0); eR_x = Math.max(eR_x, 1.0);
+    }
+    const minE = hasB ? 0.40 : (def ? 1.0 : 0.30 + 0.50 * idleFactor);   // parado: cotovelos dobrados, mãos à frente da cintura
+    eL_x = cl(eL_x, minE, 2.0); eR_x = cl(eR_x, minE, 2.0);
+    aL_z = cl(aL_z, -0.40, 0.70); aR_z = cl(aR_z, -0.70, 0.40);
+    aL_y = cl(aL_y, -0.26, 0.26); aR_y = cl(aR_y, -0.26, 0.26);
+    wL_x = cl(wL_x, -0.34, 0.28); wR_x = cl(wR_x, -0.34, 0.28);
+    wL_y = cl(wL_y, -0.28, 0.28); wR_y = cl(wR_y, -0.28, 0.28);
+  }
   m.aL.rotation.set(T('shdLx', aL_x, 18 + 26 * runK), T('shdLy', aL_y, 16 + 16 * runK), T('shdLz', aL_z, 16 + 16 * runK));
   m.aR.rotation.set(T('shdRx', aR_x, 18 + 26 * runK), T('shdRy', aR_y, 16 + 16 * runK), T('shdRz', aR_z, 16 + 16 * runK));
 
@@ -8276,9 +8516,28 @@ function render(dt, t) {
 let lastTime = performance.now();
 let accumulator = 0;
 
+const _ad = { sum: 0, n: 0, max: null };
 function loop(now) {
-  const frameDt = Math.min(0.05, (now - lastTime) / 1000);
+  const rawDt = (now - lastTime) / 1000;
+  const frameDt = Math.min(0.05, rawDt);
   lastTime = now;
+  // RESOLUÇÃO ADAPTATIVA: se o FPS cair, reduz a resolução interna; se sobrar, sobe de volta (até o valor escolhido)
+  if (!inStartMenu && rawDt < 0.5) {
+    _ad.sum += rawDt; _ad.n++;
+    if (_ad.sum > 2.0) {
+      const avg = _ad.sum / _ad.n, q = window.resQuality;
+      if (_ad.max == null) _ad.max = q;
+      let nq = q;
+      if (avg > 0.028 && q > 0.5) nq = Math.max(0.5, q - 0.1);                 // < ~36 fps
+      else if (avg < 0.0185 && q < _ad.max) nq = Math.min(_ad.max, q + 0.1);    // > ~54 fps
+      if (Math.abs(nq - q) > 1e-6) {
+        window.resQuality = nq;
+        rimLightOrange.visible = rimLightCool.visible = nq > 0.60;
+        fit();
+      }
+      _ad.sum = 0; _ad.n = 0;
+    }
+  }
   accumulator += frameDt * GAME_SPEED;
 
   while (accumulator >= FIXED_DT) {
