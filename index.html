@@ -244,6 +244,21 @@ canvas {
 #drib-combo { font-size: 15px; color: #ffd2a0; }
 body.mobile #drib-hud { bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) scale(.8); }
 body.in-menu #drib-hud { display: none; }
+/* Cooldown do bote: barrinha que esvazia sob os pés do jogador; pisca quando o bote volta */
+#steal-cd {
+  width: 46px; height: 5px; margin-left: -23px; border-radius: 99px; overflow: hidden; opacity: 0;
+  background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.35); transition: opacity .2s ease; z-index: 15;
+}
+#steal-cd i { display: block; height: 100%; width: 100%; background: #ff6b81; transform-origin: left center; }
+#steal-cd.on { opacity: .9; }
+#steal-cd.ready { opacity: 1; border-color: #3ecf8e; }
+#steal-cd.ready i { background: #3ecf8e; }
+#ankle-fx {
+  margin-left: -200px; width: 400px; text-align: center; opacity: 0; z-index: 25;
+  font: 800 34px var(--font); letter-spacing: .08em; color: #fff; white-space: nowrap;
+  text-shadow: 0 0 18px rgba(255,107,129,.9), 0 3px 0 #6D001A, 0 6px 14px rgba(0,0,0,.8);
+}
+body.in-menu #steal-cd, body.in-menu #ankle-fx { display: none; }
 @keyframes pulseExhausted {
   from { box-shadow: var(--shadow), 0 0 8px rgba(255,80,80,0.35); }
   to   { box-shadow: var(--shadow), 0 0 24px rgba(255,80,80,0.9); }
@@ -683,6 +698,23 @@ body.mobile, body.mobile canvas { touch-action: none; }
   width: 38px; height: 38px; border-radius: 10px; font-size: 20px; line-height: 1;
   background: rgba(10,2,4,.92); color: #fff; border: 1px solid rgba(255,255,255,.25);
 }
+/* Voltar ao menu: só na partida, logo acima das configurações (que descem um botão) */
+body:not(.in-menu) #cfg-btn { top: calc(58px + env(safe-area-inset-top, 0px)); }
+#home-btn {
+  position: fixed; z-index: 140; pointer-events: auto; cursor: pointer; display: flex; align-items: center; gap: 8px;
+  top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(10px + env(safe-area-inset-left, 0px));
+  height: 40px; min-width: 40px; padding: 0 11px; border-radius: 999px; box-sizing: border-box;
+  color: #fff; font: 600 12px var(--font); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap;
+  background: rgba(10,2,4,.55); border: 1px solid rgba(255,255,255,.22); opacity: .7;
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  transition: opacity .15s, background .15s, border-color .15s;
+}
+#home-btn svg { width: 17px; height: 17px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+#home-btn span { display: none; }
+#home-btn:hover { opacity: 1; background: rgba(109,0,26,.55); border-color: rgba(255,255,255,.5); }
+#home-btn.armed { opacity: 1; background: rgba(109,0,26,.85); border-color: #fff; }
+#home-btn.armed span { display: inline; }
+body.in-menu #home-btn { display: none; }
 /* ---------- Modal de configurações (abas, câmera, teclas, gráficos, áudio) ---------- */
 #cfg-panel {
   position: fixed; inset: 0; z-index: 150; pointer-events: auto; display: none;
@@ -1042,6 +1074,9 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
   <div id="drib-meter"><i class="z-good"></i><i class="z-perfect"></i><b id="drib-mark"></b></div>
   <div id="drib-combo"></div>
 </div>
+<!-- COOLDOWN DO BOTE (sob o jogador) E TEXTO DO ANKLE BREAKER -->
+<div class="hud" id="steal-cd" aria-hidden="true"><i></i></div>
+<div class="hud" id="ankle-fx" aria-hidden="true">ANKLE BREAKER!</div>
 
 <!-- MEDIDOR DE ARREMESSO -->
 <canvas id="shot-meter-canvas"></canvas>
@@ -1086,6 +1121,7 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
 
 
 <!-- CONFIGURAÇÕES / CONTROLES MOBILE -->
+<button id="home-btn" title="Voltar ao menu" aria-label="Voltar ao menu"><svg viewBox="0 0 24 24"><path d="M4 11.5 12 5l8 6.5"/><path d="M6.5 10v9h11v-9"/></svg><span>Sair da partida?</span></button>
 <button id="cfg-btn" title="Configurações">⚙</button>
 <div id="cfg-panel" role="dialog" aria-modal="true" aria-labelledby="cfg-title">
   <div class="cfg-win">
@@ -4687,7 +4723,7 @@ let replayState = null;
 function captureRigPose(m) {
   return {
     pos: m.position.clone(),
-    ry: m.rotation.y,
+    ry: m.rotation.y, rx: m.rotation.x, rz: m.rotation.z,   // rx/rz: queda do ankle breaker
     pelPos: m.pelvis.position.clone(),
     pelRot: m.pelvis.rotation.clone(),
     wstRot: m.waist.rotation.clone(),
@@ -4715,7 +4751,7 @@ function captureRigPose(m) {
 
 function applyRigPose(m, pose, gunPose) {
   m.position.copy(pose.pos);
-  m.rotation.y = pose.ry;
+  m.rotation.y = pose.ry; m.rotation.x = pose.rx || 0; m.rotation.z = pose.rz || 0;
   m.pelvis.position.copy(pose.pelPos);
   m.pelvis.rotation.copy(pose.pelRot);
   m.waist.rotation.copy(pose.wstRot);
@@ -5377,6 +5413,7 @@ function startPossession(w) {
   const o = w === 'p' ? A : P;
   t.x = HX; t.y = 420; t.vx = 0; t.vy = 0;
   o.x = HX; o.y = 342; o.vx = 0; o.vy = 0;
+  for (const e of [t, o]) e.stealCD = e.recover = e.whiffWin = e.cutWin = e.ankle = 0;   // nova posse: ninguém começa caído/punido
   // 2v2: companheiros em posicao de ataque / marcacao
   const tp = partnerOf(t), op = partnerOf(o);
   if (tp && op) {
@@ -5386,6 +5423,7 @@ function startPossession(w) {
     for (const e of [tp, op]) {
       e.vx = 0; e.vy = 0; e.fx = 0; e.fy = -1; e.ry = Math.PI;
       e.lock = e.dunk = e.layup = e.landing = e.celeb = e.block = e.steal = 0; e.stealPend = null;
+      e.stealCD = e.recover = e.whiffWin = e.cutWin = e.ankle = 0;   // bote errado / ankle breaker
       e.plan = null;
     }
   }
@@ -5803,6 +5841,59 @@ function passBall(from, to) {
 
 // Roubo rápido: braço estende em ~0.07s, TOCA na bola (contato) e só então o resultado é aplicado
 const STEAL_DUR = 0.46 * 1.3, STEAL_CONTACT = 0.12 * 1.3;   // bote 30% mais lento
+
+/* ---- BOTE: acerto mais fácil e limpo; errar (whiff) deixa o defensor vendido ----
+   Whiff = bote no portador que não pega a bola: cooldown sem novo bote + passos iniciais quase sem acelerar.
+   ANKLE BREAKER = whiff com o atacante fazendo um corte lateral até ANKLE_WINDOW antes ou depois:
+   o defensor desliza para o lado errado, cai e fica fora da jogada pelo tempo do cooldown. */
+const STEAL_RANGE = 62;         // alcance do bote do jogador (era 48)
+const WHIFF_CD = 1.8;           // sem poder dar outro bote após errar
+const WHIFF_RECOVER = 0.7;      // início do erro: velocidade e aceleração travadas
+const ANKLE_WINDOW = 0.4;       // coincidência entre o corte do atacante e o bote errado
+const ANKLE_DUR = 1.8;          // queda + recuperação (= cooldown do erro)
+
+function stealWhiff(o, T) {
+  o.stealCD = Math.max(o.stealCD || 0, WHIFF_CD);
+  o.recover = Math.max(o.recover || 0, WHIFF_RECOVER);
+  o.whiffWin = ANKLE_WINDOW;
+  if (T && T.cutWin > 0 && D(o, T) < 85) ankleBreak(o, T);
+}
+// o portador fez um corte (drible lateral ou pivô brusco): quem errou o bote há pouco cai
+function markCut(T) {
+  T.cutWin = ANKLE_WINDOW;
+  for (const E of oppsOf(T)) if (E.whiffWin > 0 && !(E.ankle > 0) && D(E, T) < 85) ankleBreak(E, T);
+}
+function ankleBreak(o, T) {
+  if (o.ankle > 0) return;
+  o.ankle = ANKLE_DUR; o.whiffWin = 0;
+  o.stealCD = Math.max(o.stealCD || 0, ANKLE_DUR); o.recover = Math.max(o.recover || 0, ANKLE_DUR);
+  o.steal = 0; o.stealPend = null; o.stealGoT = 0; o.block = 0;
+  // desliza para o lado errado: oposto ao movimento lateral do atacante em relação ao defensor
+  const rx = T.x - o.x, ry = T.y - o.y, rl = Math.hypot(rx, ry) || 1;
+  const px = -ry / rl, py = rx / rl;
+  const lv = T.vx * px + T.vy * py;
+  const side = Math.abs(lv) > 10 ? Math.sign(lv) : (T.hand || 1);
+  const sx = -side * px, sy = -side * py;
+  o.vx = sx * 150; o.vy = sy * 150;
+  o.ragImpulseX = (o.ragImpulseX || 0) + sx * 1.1;
+  o.ragImpulseY = (o.ragImpulseY || 0) + sy * 1.1;
+  // lado da queda no corpo do defensor (o modelo tomba para onde desliza)
+  const rgtX = -Math.cos(o.ry), rgtY = Math.sin(o.ry);   // "direita" do defensor (mesma convenção de stealExposure)
+  o.ankleDir = (sx * rgtX + sy * rgtY) >= 0 ? 1 : -1;
+  o.ankleSeq = (o.ankleSeq || 0) + 1;          // efeitos visuais (inclusive no convidado) disparam pela mudança
+  T.combo = Math.min((T.combo || 1) + 1, 9); T.comboT = Math.max(T.comboT || 0, COMBO_WINDOW);
+  if (typeof audio !== 'undefined') { audio.playShoeSqueak(1.0); setTimeout(() => audio.playShoeSqueak(0.7), 90); audio.playBounce(0.6); }
+}
+// Movimento de quem está caído: escorrega com atrito e não responde a comandos
+function ankleSlide(o, dt) {
+  if (!(o.ankle > 0)) return false;
+  const f = Math.exp(-(o.ankle > ANKLE_DUR - 0.35 ? 3.2 : 12) * dt);
+  o.vx *= f; o.vy *= f;
+  o.x = cl(o.x + o.vx * dt, 22, W - 22);
+  o.y = cl(o.y + o.vy * dt, 22, H - 22);
+  o.sp = Math.hypot(o.vx, o.vy); o.mv = o.sp > 8 ? 1 : 0;
+  return true;
+}
 function stealReach(o) {
   const sp = 1 - o.steal / STEAL_DUR;
   const ext = 1 - Math.pow(1 - cl((sp - 0.14) / 0.12, 0, 1), 2.2);
@@ -5865,12 +5956,13 @@ function resolveStealContact(o) {
   const dx = o.x - B.x, dy = o.y - B.y, dl = Math.hypot(dx, dy) || 1;
   const ux = dx / dl, uy = dy / dl;
   if (pd.ok) {
-    // A mão acerta a bola: ela é tapeada para o ladrão, que a recolhe logo em seguida
+    // A mão acerta a bola: tapa curto para as mãos do ladrão, que tem exclusividade para recolher (posse limpa)
     B.s = 'loose'; B.owner = null;
-    B.vx = ux * 190 + o.vx * 0.4; B.vy = uy * 190 + o.vy * 0.4; B.vz = 40;
+    B.vx = ux * 120 + o.vx * 0.5; B.vy = uy * 120 + o.vy * 0.5; B.vz = 30;
     B.z = Math.max(B.z, 16);
     B.nopick = 0; B.passer = null; B.passT = 0;
-    B.claim = o; B.claimT = 0.22; B.poke = null;
+    B.claim = o; B.claimT = 0.45; B.poke = null;
+    o.stealCD = 0; o.recover = 0;
     poss = teamOf(o); plan = null; T.plan = null; o.plan = null;
     if (T === P) charge = null;
     if (NET.live && T === A) NET.rcharge = null;
@@ -5882,22 +5974,24 @@ function resolveStealContact(o) {
       audio.playShoeSqueak(0.5);
     }
   } else {
-    // Só raspou: a bola balança na mão do dono e o portador sente o toque
-    B.poke = { x: ux, y: uy, t: 0.2 };
-    T.vx -= ux * 14; T.vy -= uy * 14;
+    // Errou a bola (whiff): o defensor fica vendido; com corte lateral do atacante no mesmo instante, ankle breaker
+    stealWhiff(o, T);
   }
 }
 
 function tryDef() {
   const A = oppFor(P); // oponente alvo (2v2: portador da bola ou o mais proximo)
   if (deadT > 0 || over) return;
+  if (P.stealCD > 0 || P.ankle > 0) return;   // errou o bote há pouco: sem novo bote até o cooldown acabar (sem guardar o comando)
   if (P.cd > 0) { P.defBuf = 0.25; return; } // comando guardado: dispara assim que o bote estiver livre
   P.stealFoc = (B.s === 'held' && B.owner === P) ? A : null;
+  const onCarrier = B.s === 'held' && B.owner === A && A.layup <= 0;
   if (P.exhausted || P.stamina < 12) {
-    // sem fôlego: ainda tenta o bote, mas fraco e sem chance de contato
+    // sem fôlego: ainda tenta o bote, mas fraco e sem chance de contato (conta como erro)
     face(P, (P.stealFoc || B).x, (P.stealFoc || B).y);
     P.steal = STEAL_DUR; P.stealSide = stealSideFor(P, B.x, B.y);
     P.stealGoT = 0.10; P.cd = 0.5;
+    if (onCarrier) P.stealPend = { tgt: A, ok: false, t: STEAL_CONTACT };
     return;
   }
 
@@ -5908,31 +6002,35 @@ function tryDef() {
 
   P.cd = 0.30 + Math.min(0.30, (P.defStreak - 1) * 0.10);
   face(P, (P.stealFoc || B).x, (P.stealFoc || B).y);
-  P.stealGoT = 0.26; // avanço guiado até a bola
+  P.stealGoT = 0.30; // avanço guiado até a bola
 
-  // Avanço curto de bote: exige que o defensor já esteja bem próximo para alcançar a bola
-  const lungeSp = P.stamina > 30 ? 58 : 28;
+  // Lunge: impulso curto na direção do bote para fechar o espaço até a bola
+  const lungeSp = P.stamina > 30 ? 105 : 50;
   P.vx += P.fx * lungeSp;
   P.vy += P.fy * lungeSp;
 
   const staminaEfficiency = cl(P.stamina / 65, 0.35, 1.0);
   const distToOpp = D(P, A);
 
-  if (B.s === 'held' && B.owner === A && A.layup <= 0) {
+  if (onCarrier) {
     P.steal = STEAL_DUR;
     P.stealSide = stealSideFor(P, B.x, B.y);
-    if (distToOpp < 48) {
-      const proximityBonus = lerp(1.35, 0.85, cl((distToOpp - 20) / 24, 0, 1));
-      // Mais fácil roubar bola parada/andando; bem mais difícil quando o oponente está executando um drible
-      const oppMove = A.cx > 0 || A.spin > 0 || A.sb > 0 || A.sd > 0 || A.bb > 0;
-      // Parado = bola fácil de interceptar; driblando = difícil; de costas/protegendo a bola = ainda mais difícil
+    if (distToOpp < STEAL_RANGE) {
+      const proximityBonus = lerp(1.4, 0.9, cl((distToOpp - 20) / (STEAL_RANGE - 24), 0, 1));
+      // Parado = bola fácil; andando = médio; driblando depende do timing do drible (no ritmo quase não dá)
+      const oppMove = activeMove(A);
       const spd = Math.hypot(A.vx, A.vy);
-      const baseCore = oppMove ? 0.09 : (isStill(A) ? 0.90 : lerp(0.38, 0.22, cl(spd / 150, 0, 1)));
-      const baseSteal = Math.min(0.97, baseCore * stealExposure(A, P) * stealSituation(A, P) * staminaEfficiency * proximityBonus);
+      const moveCore = A.mvGrade === 'late' ? 0.32 : (A.mvGrade === 'perfect' ? 0.04 : 0.12);
+      const baseCore = oppMove ? moveCore : (isStill(A) ? 0.92 : lerp(0.5, 0.32, cl(spd / 150, 0, 1)));
+      // ângulo mais largo: de lado ou meio de costas o tapa ainda alcança a bola (exposição mínima maior)
+      const exposure = Math.max(0.6, stealExposure(A, P));
+      const baseSteal = Math.min(0.97, baseCore * exposure * stealSituation(A, P) * staminaEfficiency * proximityBonus);
       P.stealPend = {
         tgt: A, ok: R() < baseSteal, t: STEAL_CONTACT,
         msg: P.defStreak >= 3 ? 'BOTES SEGUIDOS! CANSANDO!' : 'TENTATIVA DE ROUBO!'
       };
+    } else {
+      P.stealPend = { tgt: A, ok: false, t: STEAL_CONTACT };   // longe demais: o bote vai no vazio
     }
   } else if (
     (fl && fl.who === 'a' && (fl.phase === 'windup' || fl.elapsed < 0.35) && distToOpp < 56) ||
@@ -5996,6 +6094,8 @@ function gameKeyDown(code) {
     if (rpSkip.me && rpSkip.other) endReplayNet(); else rpBroadcast();
     return;
   }
+
+  if (P && P.ankle > 0) return;   // caído no ankle breaker: nenhuma ação até levantar
 
   if ((code === 'ShiftLeft' || code === 'ShiftRight') && P && !P.exhausted && P.stamina > 18 && P.burstT <= 0) {
     P.burstT = 0.26;
@@ -6123,46 +6223,53 @@ const MOVE_CURVE_SPEC = {
           lat: [[0, 0.3], [1, 0.28, 'linear']],
           fwd: [[0, 0.7], [0.12, 0.7, 'linear'], [0.14, -0.92, 'easeOutExpo'], [1, -0.92, 'linear']] }
 };
-const MOVE_CURVES = {};
-const _mvOut = { spd: 0, lat: 0, fwd: 0 };
-(function buildMoveCurves() {
-  for (const kind in MOVE_CURVE_SPEC) {
-    const spec = MOVE_CURVE_SPEC[kind], obj = {}, props = {};
-    for (const prop in spec) {
-      const keys = spec[prop];
-      obj[prop] = keys[0][1];
-      props[prop] = keys.slice(1).map((k, i) => ({ value: k[1], duration: Math.max(1, (k[0] - keys[i][0]) * 1000), easing: k[2] || 'linear' }));
-    }
-    let tl = null;
-    if (typeof anime !== 'undefined') {
-      try { tl = anime.timeline({ autoplay: false }); tl.add({ targets: obj, ...props }); } catch (e) { tl = null; }
-    }
-    MOVE_CURVES[kind] = { spec, obj, tl };
+// queda do ankle breaker (roll = tomba de lado, pitch = joga o tronco): tropeça, cai, fica no chão e levanta
+const ANKLE_CURVE_SPEC = {
+  roll:  [[0, 0], [0.1, 0.32, 'easeOutQuad'], [0.26, 1.3, 'easeInQuad'], [0.31, 1.16, 'easeOutQuad'], [0.72, 1.16, 'linear'], [1, 0, 'easeInOutSine']],
+  pitch: [[0, 0], [0.1, -0.16, 'easeOutQuad'], [0.26, 0.14, 'easeInQuad'], [0.72, 0.1, 'linear'], [1, 0, 'easeInOutSine']]
+};
+// Cada curva vira uma timeline anime.js pausada sobre um objeto simples; seek() posiciona no progresso pedido
+function makeCurve(spec) {
+  const obj = {}, props = {};
+  for (const prop in spec) {
+    const keys = spec[prop];
+    obj[prop] = keys[0][1];
+    props[prop] = keys.slice(1).map((k, i) => ({ value: k[1], duration: Math.max(1, (k[0] - keys[i][0]) * 1000), easing: k[2] || 'linear' }));
   }
-})();
+  let tl = null;
+  if (typeof anime !== 'undefined') {
+    try { tl = anime.timeline({ autoplay: false }); tl.add({ targets: obj, ...props }); } catch (e) { tl = null; }
+  }
+  return { spec, obj, tl };
+}
+const MOVE_CURVES = {};
+for (const kind in MOVE_CURVE_SPEC) MOVE_CURVES[kind] = makeCurve(MOVE_CURVE_SPEC[kind]);
+const ANKLE_CURVE = makeCurve(ANKLE_CURVE_SPEC);
+const _mvOut = { spd: 0, lat: 0, fwd: 0 }, _ankOut = { roll: 0, pitch: 0 };
 // reserva sem anime.js (CDN fora do ar): interpola as mesmas chaves com easings equivalentes
 const _ease = {
   linear: t => t, easeOutQuad: t => 1 - (1 - t) * (1 - t), easeInQuad: t => t * t,
   easeOutCubic: t => 1 - Math.pow(1 - t, 3), easeOutExpo: t => (t >= 1 ? 1 : 1 - Math.pow(2, -10 * t)),
   easeInOutSine: t => -(Math.cos(Math.PI * t) - 1) / 2
 };
-function moveCurve(kind, p) {
-  const c = MOVE_CURVES[kind];
+function sampleCurve(c, p, out) {
   p = cl(p, 0, 1);
   if (c.tl) {
     c.tl.seek(p * 1000);
-    for (const k in _mvOut) _mvOut[k] = parseFloat(c.obj[k]) || 0;
-    return _mvOut;
+    for (const k in out) out[k] = parseFloat(c.obj[k]) || 0;
+    return out;
   }
-  for (const k in _mvOut) {
+  for (const k in out) {
     const keys = c.spec[k];
     let i = 1;
     while (i < keys.length - 1 && p > keys[i][0]) i++;
     const a = keys[i - 1], b = keys[i], span = Math.max(1e-6, b[0] - a[0]);
-    _mvOut[k] = lerp(a[1], b[1], (_ease[b[2]] || _ease.linear)(cl((p - a[0]) / span, 0, 1)));
+    out[k] = lerp(a[1], b[1], (_ease[b[2]] || _ease.linear)(cl((p - a[0]) / span, 0, 1)));
   }
-  return _mvOut;
+  return out;
 }
+const moveCurve = (kind, p) => sampleCurve(MOVE_CURVES[kind], p, _mvOut);
+const ankleCurve = p => sampleCurve(ANKLE_CURVE, p, _ankOut);
 
 // Root motion de qualquer drible: (fx,fy) = "frente" (câmera do jogador / alvo da CPU), (ix,iy) = direção comandada
 function moveLocomotion(o, dt, fx, fy, ix, iy) {
@@ -6217,6 +6324,7 @@ function startDribbleMove(o, kind, dir, grade) {
   o.mvGrade = grade; o.lastMove = kind; o.combo = combo; o.comboT = 0;
   o.mvSeq = (o.mvSeq || 0) + 1;                      // o HUD (inclusive do convidado, via snapshot) reage a cada drible novo
   o.mvBuf = null;
+  if (kind !== 'sb') markCut(o);                     // drible lateral: pode quebrar o tornozelo de quem errou o bote
 
   // bom timing tira o passo do marcador: quanto maior o combo, mais tempo ele fica para trás
   if (g.shake > 0) {
@@ -6246,6 +6354,8 @@ function queueDribbleMove(o, kind, dir, err) {
 // Por passo de física: comando guardado, janela de combo e "passo perdido" do marcador
 function dribbleStep(o, dt, endedNow) {
   if (endedNow) { o.comboT = COMBO_WINDOW; o.mvRate = 1; }
+  // bote: cooldown do erro, recuperação, janelas do ankle breaker e a queda
+  for (const k of ['stealCD', 'recover', 'whiffWin', 'cutWin', 'ankle']) if (o[k] > 0) o[k] = Math.max(0, o[k] - dt);
   if (o.comboT > 0) { o.comboT = Math.max(0, o.comboT - dt); if (o.comboT <= 0 && !activeMove(o)) o.combo = 0; }
   if (o.shook > 0) o.shook = Math.max(0, o.shook - dt);
   const bf = o.mvBuf;
@@ -6328,6 +6438,61 @@ function dribHudTick() {
       if (P.combo > 1) dribPop(H.combo, 'COMBO x' + P.combo + (P.combo >= 4 ? '!' : ''));
     }
   }
+  boteHudTick();
+}
+
+// Cooldown do bote sob o jogador + efeitos do ankle breaker (só visual; dispara pela mudança de ankleSeq,
+// então funciona igual no anfitrião e no convidado)
+const boteHud = { cd: $('steal-cd'), fill: document.querySelector('#steal-cd i'), fx: $('ankle-fx'), wasCd: false, seen: new WeakMap() };
+const _scr = new THREE.Vector3();
+function toScreen(o, y) {
+  _scr.set(o.x * s, y, o.y * s).project(cam);
+  return { x: (_scr.x + 1) / 2 * innerWidth, y: (1 - _scr.y) / 2 * innerHeight, front: _scr.z < 1 };
+}
+function boteHudTick() {
+  const H = boteHud;
+  if (!P || !H.cd) return;
+  const cdv = inStartMenu ? 0 : (P.stealCD || 0);
+  if (cdv > 0) {
+    const p = toScreen(P, 0);
+    H.cd.style.left = p.x + 'px'; H.cd.style.top = (p.y + 10) + 'px';
+    H.fill.style.transform = 'scaleX(' + cl(cdv / Math.max(WHIFF_CD, ANKLE_DUR), 0, 1).toFixed(3) + ')';
+    H.cd.classList.add('on'); H.cd.classList.remove('ready');
+    H.wasCd = true;
+  } else if (H.wasCd) {
+    // bote liberado: pisca verde e some
+    H.wasCd = false;
+    H.fill.style.transform = 'scaleX(1)';
+    H.cd.classList.add('ready');
+    setTimeout(() => H.cd.classList.remove('on', 'ready'), 380);
+  }
+  for (const o of ents()) {
+    const seq = o.ankleSeq || 0, last = H.seen.get(o);
+    H.seen.set(o, seq);
+    if (last === undefined || seq === last || inStartMenu) continue;
+    ankleFx(o);
+  }
+}
+let ankleRing = null;
+function ankleFx(o) {
+  camShake = Math.max(camShake, 0.7);
+  const H = boteHud, p = toScreen(o, 2.1);
+  H.fx.style.left = p.x + 'px'; H.fx.style.top = p.y + 'px';
+  // anel de poeira no chão onde o defensor caiu
+  if (!ankleRing) {
+    ankleRing = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.75, 40), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+    ankleRing.rotation.x = -Math.PI / 2; ankleRing.userData.noShadow = true; sc.add(ankleRing);
+  }
+  ankleRing.position.set(o.x * s, 0.03, o.y * s);
+  const st = { r: 0.4, a: 0.85 };
+  const draw = () => { ankleRing.scale.setScalar(st.r); ankleRing.material.opacity = st.a; };
+  if (typeof anime === 'undefined') { H.fx.style.opacity = 1; setTimeout(() => { H.fx.style.opacity = 0; }, 1100); return; }
+  anime.remove([H.fx, st]);
+  anime({ targets: st, r: 2.2, a: 0, duration: 650, easing: 'easeOutExpo', update: draw });
+  anime({ targets: H.fx, opacity: [{ value: 1, duration: 80 }, { value: 0, duration: 450, delay: 750, easing: 'easeInQuad' }],
+    scale: [{ value: [1.8, 1], duration: 380, easing: 'easeOutBack' }], translateY: [{ value: [10, -26], duration: 1280, easing: 'easeOutExpo' }],
+    rotate: [{ value: [-6, 0], duration: 380, easing: 'easeOutBack' }] });
+  draw();
 }
 
 /* ============================================================================
@@ -6356,6 +6521,7 @@ function locomoteEntity(o, dx, dy, targetSp, dt, customAccel = 12.5) {
       const dot = ndx * moveDirX + ndy * moveDirY;
       if (dot < -0.18 && o.pivotT <= 0) {
         o.pivotT = 0.26;
+        if (B.s === 'held' && B.owner === o) markCut(o);   // corte brusco com a bola também vale para o ankle breaker
         // Impulso inercial na Active Ragdoll ao estancar e inverter direção (plant & cut)
         o.ragImpulseX = (o.ragImpulseX || 0) + (prevVx - ndx * targetSp) * 0.0045;
         o.ragImpulseY = (o.ragImpulseY || 0) + (prevVy - ndy * targetSp) * 0.0045;
@@ -6713,15 +6879,18 @@ function humanControlStep(dt) {
     if (P.celeb > 0) sp *= 0.35;
 
     if (P.shook > 0) sp *= 0.75;                                           // a CPU acertou o drible no tempo: perde um pouco o passo
+    if (P.recover > 0) sp *= 0.2;                                          // errou o bote: pés presos no início
 
-    if (activeMove(P)) {
+    if (ankleSlide(P, dt)) {
+      // ankle breaker: caído, sem controle até levantar
+    } else if (activeMove(P)) {
       moveLocomotion(P, dt, cd.x, cd.y, inDirX, inDirY);                    // curvas do drible (anime.js)
     } else if (P.steal > 0 && P.stealGoT > 0) {
       const f = P.stealFoc || B;
       const gdx = f.x - P.x, gdy = f.y - P.y, gl = Math.hypot(gdx, gdy) || 1;
       locomoteEntity(P, gdx / gl, gdy / gl, gl > 18 ? 215 : 40, dt, 30);
     } else {
-      locomoteEntity(P, inDirX, inDirY, sp, dt);
+      locomoteEntity(P, inDirX, inDirY, sp, dt, P.recover > 0 ? 3 : 12.5);
     }
 
     if (charge) {
@@ -6785,6 +6954,7 @@ function humanControlStep(dt) {
    IA GENERICA (CPU adversaria e companheiros no 2v2)
    ============================================================================ */
 function cpuAgent(E, dt) {
+  if (ankleSlide(E, dt)) return;   // caída no ankle breaker: fora da jogada até levantar
   const myTeam = teamOf(E);
   const M = markOf(E);
   const holdingTeam = (poss && B.s === 'held') ? poss : null;
@@ -6855,8 +7025,9 @@ function cpuAgent(E, dt) {
       const ty = H.y + (vy / m) * cushion;
       const distTarget = D(E, { x: tx, y: ty });
       const defMaxSpeed = (H.cx > 0 || H.sd > 0 || H.bb > 0 || H.sb > 0 || H.spin > 0) ? 132 : 158;
-      const shookF = E.shook > 0 ? 0.4 : 1;      // drible no tempo certo: o marcador perde o passo
-      locomoteEntity(E, tx - E.x, ty - E.y, Math.min(defMaxSpeed, distTarget * 5.2) * shookF, dt, E.shook > 0 ? 3 : 7.5);
+      // drible no tempo certo: o marcador perde o passo; bote errado: pés presos no início do erro
+      const shookF = E.recover > 0 ? 0.2 : (E.shook > 0 ? 0.4 : 1);
+      locomoteEntity(E, tx - E.x, ty - E.y, Math.min(defMaxSpeed, distTarget * 5.2) * shookF, dt, (E.shook > 0 || E.recover > 0) ? 3 : 7.5);
     } else {
       const vx = HX - M.x, vy = HY - M.y, m = Math.hypot(vx, vy) || 1;
       const tx = M.x + (vx / m) * 50;
@@ -6864,14 +7035,16 @@ function cpuAgent(E, dt) {
       locomoteEntity(E, tx - E.x, ty - E.y, Math.min(150, D(E, { x: tx, y: ty }) * 5), dt, 7.5);
     }
 
-    if (D(E, H) < 34 && E.cd <= 0 && H.dunk <= 0 && !(E.shook > 0)) {
+    if (D(E, H) < 40 && E.cd <= 0 && H.dunk <= 0 && !(E.shook > 0) && !(E.stealCD > 0)) {
       E.cd = 0.68;
       const exhaustedVulnerability = H.exhausted ? 0.14 : 0;
       // drible fora do ritmo deixa a bola exposta no meio do movimento
-      const inMove = activeMove(H), moveChance = !inMove ? 0 : (H.mvGrade === 'late' ? 0.07 : H.mvGrade === 'perfect' ? 0.003 : 0.008);
-      const rawChance = (inMove ? moveChance : H.dr ? 0.04 : (H === P && charge) ? 0.18 : 0.15) * (isStill(H) ? 1.8 : 1);
-      const stealChance = Math.min(0.6, rawChance * stealExposure(H, E) * stealSituation(H, E)) + exhaustedVulnerability;
-      face(E, B.x, B.y); E.vx += E.fx * 55; E.vy += E.fy * 55;
+      const inMove = activeMove(H), moveChance = !inMove ? 0 : (H.mvGrade === 'late' ? 0.16 : H.mvGrade === 'perfect' ? 0.006 : 0.02);
+      const rawChance = (inMove ? moveChance : H.dr ? 0.08 : (H === P && charge) ? 0.32 : 0.26) * (isStill(H) ? 1.8 : 1);
+      const stealChance = Math.min(0.7, rawChance * stealExposure(H, E) * stealSituation(H, E)) + exhaustedVulnerability;
+      // errar custa caro: a CPU escolhe o momento e só às vezes arrisca um bote improvável
+      if (stealChance < 0.14 && R() > 0.15) { E.cd = 0.3; return; }
+      face(E, B.x, B.y); E.vx += E.fx * 80; E.vy += E.fy * 80;
       E.steal = STEAL_DUR;
       E.stealSide = stealSideFor(E, B.x, B.y);
       E.stealPend = { tgt: H, ok: R() < stealChance, t: STEAL_CONTACT };
@@ -7512,6 +7685,12 @@ function syncBiomechanics(o, m, dt, t) {
       : (o.dunkType === 6 ? Math.PI * Math.sin(Math.PI * cl((1 - o.dunk / 0.96 - 0.16) / 0.70, 0, 1)) : 0))
     : (o.layup > 0 && o.layupType === 6 ? 1.35 * Math.sin(Math.PI * cl((1 - o.layup / 0.78 - 0.1) / 0.8, 0, 1)) : 0);
   m.rotation.y = o.ry + (o.spin > 0 ? smoothstep(spp) * Math.PI * 2 * o.hand : 0) + reverseYaw + extraYaw;
+  // ANKLE BREAKER: tropeça, tomba de lado e levanta (curva anime.js amostrada pelo progresso da queda)
+  if (o.ankle > 0) {
+    const ak = ankleCurve(1 - o.ankle / ANKLE_DUR);
+    m.rotation.z = ak.roll * (o.ankleDir || 1);
+    m.rotation.x = ak.pitch;
+  } else if (m.rotation.z || m.rotation.x) { m.rotation.z = 0; m.rotation.x = 0; }
 
   const pelvis = m.pelvis, waist = m.waist, ch = m.ch, neck = m.neck, hd = m.hd;
   const strideWave = Math.sin(ph) * amp;
@@ -10933,6 +11112,19 @@ requestAnimationFrame(loop);
   $('cfg-close').onclick = closeSettings;
   $('cfg-done').onclick = closeSettings;
   panel.addEventListener('click', e => { if (e.target === panel) closeSettings(); });   // clique fora da janela fecha
+
+  // Voltar ao menu (na partida): o 1º clique pede confirmação, o 2º sai. openStartMenu encerra a sala online,
+  // o replay e reinicia o estado da partida; o loop segue só com a vitrine do menu.
+  const homeBtn = $('home-btn');
+  let homeArm = 0;
+  const disarmHome = () => { clearTimeout(homeArm); homeArm = 0; homeBtn.classList.remove('armed'); };
+  for (const ev of ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart']) homeBtn.addEventListener(ev, e => e.stopPropagation(), { passive: true });
+  homeBtn.onclick = e => {
+    e.stopPropagation();
+    if (homeArm) { disarmHome(); closeSettings(); releaseGameKeys(); openStartMenu(); return; }
+    homeBtn.classList.add('armed');
+    homeArm = setTimeout(disarmHome, 3000);
+  };
 
   setTab(curTab);
   M.applyMode(); renderKeys(); refreshBadges();
