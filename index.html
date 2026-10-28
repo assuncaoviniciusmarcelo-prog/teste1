@@ -6090,14 +6090,14 @@ const DRIB_GRADE = {
   good:    { label: 'BOM',           rate: 1.00, cost: 1.00, open: 1.00, shake: 0.14 },
   late:    { label: 'FORA DO RITMO', rate: 0.82, cost: 1.30, open: 1.50, shake: 0 }
 };
-const DRIB_PERFECT_S = 0.05, DRIB_GOOD_S = 0.11;   // distância (em segundos) até a bola chegar na mão
+const DRIB_PERFECT_S = 0.07, DRIB_GOOD_S = 0.15;   // distância (em segundos) até a bola chegar na mão (proporcional ao ritmo mais lento da postura)
 const CANCEL_AT = 0.6;          // progresso a partir do qual o drible pode ser cancelado pelo próximo
 const COMBO_WINDOW = 0.4;       // tempo após o fim de um drible para o próximo ainda contar no combo
 const DRIB_BUFFER = 0.3;        // comando dado cedo demais fica guardado por este tempo
 
 function dribbleTimingErr(o) {
   const c = (((o.bp || 0) % 1) + 1) % 1;
-  return Math.min(c, 1 - c) / (o.dribFreq || 2.25);
+  return Math.min(c, 1 - c) / (o.dribFreq || 1.6);
 }
 function dribbleGrade(err) { return err <= DRIB_PERFECT_S ? 'perfect' : (err <= DRIB_GOOD_S ? 'good' : 'late'); }
 function activeMove(o) { for (const k of DRIB_KINDS) if (o[k] > 0) return k; return null; }
@@ -6315,7 +6315,7 @@ function dribHudTick() {
   H.el.classList.toggle('on', !!show);
   if (show) {
     // marca: -0.5..0.5 da fase em volta da mão (centro); zonas em segundos convertidas pela frequência atual
-    const f = P.dribFreq || 2.25, c = (((P.bp || 0) % 1) + 1) % 1, off = c > 0.5 ? c - 1 : c;
+    const f = P.dribFreq || 1.6, c = (((P.bp || 0) % 1) + 1) % 1, off = c > 0.5 ? c - 1 : c;
     H.mark.style.left = (50 + off * 100) + '%';
     H.good.style.width = Math.min(100, DRIB_GOOD_S * f * 200) + '%';
     H.perfect.style.width = Math.min(100, DRIB_PERFECT_S * f * 200) + '%';
@@ -7103,7 +7103,7 @@ function updatePhysicsStep(dt) {
       o.ph += dt * ((o.v * s) / 0.52);
     }
     const prevBp = o.bp || 0;
-    const dribFreq = (o.cx > 0 || o.sd > 0 || o.bb > 0 || o.sb > 0) ? 2.55 : (o.dr ? 2.25 : 1.55 + (o.v / 228) * 1.85);
+    const dribFreq = (o.cx > 0 || o.sd > 0 || o.bb > 0 || o.sb > 0) ? 1.9 : (o.dr ? 1.6 : 1.55 + (o.v / 228) * 1.85);
     o.bp = prevBp + dt * dribFreq;
     o.dribFreq = dribFreq;                       // usado para medir o timing do drible em segundos
 
