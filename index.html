@@ -747,6 +747,8 @@ body.mobile #touch-ui { display: block; }
 .tb-steal { right: 0;                          bottom: calc(100px * var(--ts));    width: calc(58px * var(--ts)); height: calc(58px * var(--ts)); }
 .tb-cross { right: calc(66px * var(--ts));     bottom: calc(100px * var(--ts));    width: calc(54px * var(--ts)); height: calc(54px * var(--ts)); }
 .tb-spin  { right: calc(126px * var(--ts));    bottom: calc(76px * var(--ts));     width: calc(54px * var(--ts)); height: calc(54px * var(--ts)); }
+.tb-cam   { right: calc(66px * var(--ts));     bottom: calc(166px * var(--ts));    width: calc(44px * var(--ts)); height: calc(44px * var(--ts)); }
+.tb-cam.lock { background: rgba(109,0,26,.9); border-color: #ffffff; }
 .tb-stance{ right: 0;                          bottom: calc(166px * var(--ts));    width: calc(58px * var(--ts)); height: calc(58px * var(--ts)); }
 
 /* ---------- Ajustes de HUD no celular ---------- */
@@ -875,7 +877,7 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
   <div class="replay-bar-bottom">
     <div class="replay-speed-indicator" id="replay-speed">CÂMERA DE TRANSMISSÃO • 1.0X</div>
     <div class="replay-skip-hint">
-      Pressione <span class="key-badge">ESPAÇO</span> para pular
+      <span id="replay-skip-txt">Pressione <span class="key-badge">ESPAÇO</span> para pular</span>
     </div>
   </div>
 </div>
@@ -907,6 +909,7 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
   <div class="key-hint"><span class="key-badge">G</span> Passar (2v2)</div>
   <div class="key-hint"><span class="key-badge">SEGURAR C</span> Drible (+ WASD)</div>
   <div class="key-hint"><span class="key-badge">Q</span> Crossover</div>
+  <div class="key-hint"><span class="key-badge">L</span> Câmera na bola</div>
   <div class="key-hint"><span class="key-badge">F</span> Giro</div>
   <div class="key-hint"><span class="key-badge">E</span> Roubar / Toco</div>
   <div class="key-hint"><span class="key-badge">B</span> Esqueleto 3D</div>
@@ -1029,6 +1032,7 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
     <div class="tbtn tb-cross"       data-k="KeyQ">CROSS</div>
     <div class="tbtn tb-spin"        data-k="KeyF">SPIN</div>
     <div class="tbtn tb-stance"      data-k="KeyC">POSTURA</div>
+    <div class="tbtn tb-cam"         data-k="KeyL" aria-label="Câmera na bola"><svg viewBox="0 0 24 24" width="58%" height="58%" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.6"/></svg></div>
   </div>
 </div>
 
@@ -1053,6 +1057,9 @@ const _PV1 = _PV0; // tremor de vértices desativado (causava piscadas no piso)
 THREE.ShaderChunk.project_vertex = _PV1;
 window.retro = true;
 const LOWPOLY = true;
+const SHS = 1.16;   // escala dos tênis
+const DUNKBASE = [0, 1, 2, 3, 0, 2, 1, 3], LAYBASE = [0, 1, 2, 3, 0, 3, 2, 0];
+const DUNKJ = [1, 1, 1, 1, 1, 1.05, 0.98, 1.2], LAYJ = [1, 1, 1, 1, 0.8, 1.12, 0.92, 0.9];
 /* ============================================================================
    1. CONSTANTES GLOBAIS E UTILITÁRIOS MATEMÁTICOS
    ============================================================================ */
@@ -1927,6 +1934,8 @@ const fxRT = new THREE.WebGLRenderTarget(64, 64, {
   depthBuffer: true, stencilBuffer: false
 });
 fxRT.texture.generateMipmaps = false;
+fxRT.depthTexture = new THREE.DepthTexture(64, 64);
+fxRT.depthTexture.type = THREE.UnsignedIntType;
 const fxScene = new THREE.Scene();
 const fxCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 const fxMat = new THREE.ShaderMaterial({
@@ -2008,12 +2017,31 @@ const mbRT = [0, 1].map(() => {
   return t;
 });
 const mbMat = new THREE.ShaderMaterial({
-  uniforms: { tCur: { value: null }, tPrev: { value: null }, uK: { value: 0 } },
+  uniforms: { tCur: { value: null }, tPrev: { value: null }, uK: { value: 0 }, tDepth: { value: null }, uInvVP: { value: new THREE.Matrix4() }, uPrevVP: { value: new THREE.Matrix4() }, uShut: { value: 0 }, uZoom: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
   fragmentShader: [
-    'varying vec2 vUv; uniform sampler2D tCur, tPrev; uniform float uK;',
+    'varying vec2 vUv; uniform sampler2D tCur, tPrev; uniform float uK, uShut, uZoom; uniform sampler2D tDepth; uniform mat4 uInvVP, uPrevVP;',
     'void main(){',
-    '  vec4 c = texture2D(tCur, vUv), p = texture2D(tPrev, vUv);',
+    // vetor de movimento na tela: rotação da câmera (reprojeção de direção) + zoom radial pelo deslocamento à frente
+    '  vec2 ndc = vUv * 2.0 - 1.0;',
+    '  float dz = texture2D(tDepth, vUv).x;',
+    '  vec4 wp = uInvVP * vec4(ndc, dz * 2.0 - 1.0, 1.0); wp /= wp.w;',   // posição 3D do pixel
+    '  vec4 pc = uPrevVP * wp;',                                          // onde esse ponto estava no quadro anterior
+    '  vec2 v = (pc.xy / pc.w - ndc) * 0.5;',
+    '  vec2 e = (vUv - vec2(0.5, 0.45)) * vec2(1.6, 1.0);',
+    '  v *= uShut * smoothstep(0.10, 0.55, length(e));', // centro nítido (jogador/bola); o borrão cresce em direção às bordas
+    '  float l = length(v);',
+    '  v *= smoothstep(0.0004, 0.0018, l);',                // zona morta: sem tremedeira em movimentos mínimos
+    '  v *= min(1.0, 0.055 / max(l, 1e-5));',               // teto do comprimento do rastro
+    // blur direcional de 12 amostras (centrado: metade do rastro à frente, metade atrás) com peso gaussiano
+    '  vec4 c = vec4(0.0); float wsum = 0.0;',
+    '  for (int i = 0; i < 12; i++) {',
+    '    float t = float(i) / 11.0 - 0.5;',
+    '    float w = exp(-t * t * 7.0);',
+    '    c += texture2D(tCur, clamp(vUv + v * t, vec2(0.001), vec2(0.999))) * w; wsum += w;',
+    '  }',
+    '  c /= wsum;',
+    '  vec4 p = texture2D(tPrev, vUv);',
     '  vec4 m = mix(c, p, uK);',
     '  vec4 d = m - c;',
     '  m = c + sign(d) * max(abs(d) - 0.6/255.0, 0.0);', // garante convergência (sem rastro "preso" por quantização)
@@ -2026,6 +2054,7 @@ const mbScene = new THREE.Scene();
 const mbQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mbMat);
 mbQuad.frustumCulled = false; mbScene.add(mbQuad);
 let mbIdx = 0, mbValid = false, mbLast = 0;
+const mbCurVP = new THREE.Matrix4(), mbPrevVP = new THREE.Matrix4(), mbPrevView = new THREE.Matrix4(), mbRc = new THREE.Matrix4(), mbRp = new THREE.Matrix4(), mbPrevPos = new THREE.Vector3(), mbCurPos = new THREE.Vector3(), mbFwd = new THREE.Vector3();
 window.setMotionBlur = v => {
   const prevPost = window.fxEnabled || window.motionBlur > 0;
   window.motionBlur = cl(+v || 0, 0, 0.9); mbValid = false;
@@ -2046,7 +2075,17 @@ function renderFrame() {
       const dst = mbRT[mbIdx], prev = mbRT[1 - mbIdx];
       mbMat.uniforms.tCur.value = fxRT.texture;
       mbMat.uniforms.tPrev.value = prev.texture;
-      mbMat.uniforms.uK.value = mbValid ? Math.pow(window.motionBlur, dt * 60) : 0;
+      // reprojeção por pixel: profundidade + view-projection do quadro atual e do anterior (câmera em rotação E translação)
+      cam.updateMatrixWorld();
+      mbCurVP.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+      if (!mbValid) mbPrevVP.copy(mbCurVP);
+      mbMat.uniforms.uInvVP.value.copy(mbCurVP).invert();
+      mbMat.uniforms.uPrevVP.value.copy(mbPrevVP);
+      mbMat.uniforms.tDepth.value = fxRT.depthTexture;
+      mbPrevVP.copy(mbCurVP);
+      mbMat.uniforms.uZoom.value = 0;
+      mbMat.uniforms.uShut.value = cl(window.motionBlur * 0.045 / dt, 0, 2.2);   // obturador de tempo fixo: o borrão não muda com o FPS
+      mbMat.uniforms.uK.value = 0;
       rd.setRenderTarget(dst);
       rd.render(mbScene, fxCam);
       src = dst.texture; mbIdx = 1 - mbIdx; mbValid = true;
@@ -2085,6 +2124,7 @@ function fit() {
   if (window.fxEnabled || window.motionBlur > 0) {
     rd.setSize(innerWidth, innerHeight, false);
     fxRT.setSize(rw, rh);
+    if (fxRT.depthTexture) { fxRT.depthTexture.image.width = rw; fxRT.depthTexture.image.height = rh; }
     for (const t of mbRT) t.setSize(rw, rh);
     mbValid = false;
     fxMat.uniforms.uRes.value.set(rw, rh);
@@ -2862,6 +2902,12 @@ function createRealisticStreetballPlayer(isAI) {
     skel:{name:'Esqueleto Roxo',up:0x3b1d78,mid:0xdcf5cc,out:0xdcf5cc,acc:0xe8ecf4,lace:0x3b1d78,glow:1,decal:1},
     aj11:{name:'Galáxia Low',up:0x0b0b0e,mid:0xffffff,out:0xa9d8ff,acc:0x2347d8,lace:0x0b0b0e,low:0x050507,patent:1,lf:[.55,.95],ice:1},
     aj11b:{name:'Blackout Low',up:0x08080a,mid:0x0c0c0f,out:0x2a2a30,acc:0x3a3a42,lace:0x08080a,low:0x030304,patent:1,lf:[.55,.95],ice:1},
+    neon:{name:'Neon Duo (Verde + Rosa)',ice:1,decal:'wing',lf:[.3,.78],sides:{
+      L:{up:0xc6ff1a,mid:0x3cf02c,out:0x58f040,acc:0xff3a8a,lace:0xe8ff3a,low:0x4cf02a,tongue:0xf4ff2a,decalCol:'#f2ff4a'},
+      R:{up:0xff2f6a,mid:0xe01257,out:0xf02a6a,acc:0x6bff2a,lace:0xff7c62,low:0xe8185c,tongue:0xff5a86,decalCol:'#ff7f9c'}}},
+    bw:{name:'Duo Preto & Branco',ice:1,decal:'wing',lf:[.3,.78],sides:{
+      L:{up:0x0c0c10,mid:0x16161c,out:0x34343c,acc:0xffffff,lace:0xffffff,low:0x1e1e26,tongue:0xffffff,decalCol:'#ffffff'},
+      R:{up:0xf5f6f8,mid:0xe6e8ee,out:0xc9ccd6,acc:0x111114,lace:0x111114,low:0xdfe2ea,tongue:0x111114,decalCol:'#16161a'}}},
     tatum:{name:'Ice Wave',up:0x0d0d10,mid:0xf4f6f8,out:0xd4eeee,acc:0xff3a1c,lace:0x0d0d10,low:0xf4f6f8,lf:[.3,.8],ice:1,win:0xc8f542}
   };
   window.SHOE_DEFS=SHD;
@@ -2888,32 +2934,41 @@ function createRealisticStreetballPlayer(isAI) {
       g.lineWidth=6-i*.4;g.beginPath();g.moveTo(158,y);g.lineTo(196,y);g.moveTo(204,y);g.lineTo(236-i*3,y);g.stroke();
       for(const x of [154,200])g.beginPath(),g.arc(x,y,6-i*.3,0,7),g.fill();}
     return new THREE.CanvasTexture(c)})();
-  const buildShoe=id=>{
-    const P=SHD[id],G=new THREE.Group();
+  const WT={};
+  const wingTex=col=>{ if(WT[col])return WT[col]; const c=document.createElement('canvas');c.width=256;c.height=128;const g=c.getContext('2d');
+    g.strokeStyle=col;g.lineCap='round';
+    for(let i=0;i<7;i++){const x=24+i*30;g.lineWidth=5;g.beginPath();g.moveTo(x,8);g.quadraticCurveTo(x+24,60,x+8,120);g.stroke();
+      g.lineWidth=2.5;for(let j=1;j<4;j++){g.beginPath();g.moveTo(x+3+j*2,24+j*22);g.lineTo(x+20+j*3,32+j*22);g.stroke();}}
+    return WT[col]=new THREE.CanvasTexture(c)};
+  const buildShoe=(id,isL)=>{
+    const P0=SHD[id],P=P0.sides?Object.assign({},P0,P0.sides[isL?'L':'R']):P0,G=new THREE.Group();
     const sm=(c,r,m)=>{const k=StylizedMat(c,r,m,false);k.side=THREE.DoubleSide;return k};
     const mUp=sm(P.up,P.patent?.5:.55,.05),mMid=sm(P.mid,.6,.03),mOut=sm(P.out,P.ice?.2:.75,P.ice?.15:.03),mAcc=sm(P.acc,.4,.1),mLace=sm(P.lace,.8,0);
     if(P.ice){mOut.transparent=true;mOut.opacity=.82}
     if(P.glow&&mMid.emissive){mMid.emissive=new THREE.Color(0xb8ffa8).multiplyScalar(.3);mOut.emissive=new THREE.Color(0xb8ffa8).multiplyScalar(.3)}
     const sp=z=>Math.max(0,z-.12)*.2;
-    const rowsUp=SHZ.map((z,i)=>[z,SHW[i],-.066,SHT[i]]);
-    const rowsMid=SHZ.map((z,i)=>[z,SHW[i]*1.07,-.080+sp(z),-.060+sp(z)*.9]);
-    const rowsOut=SHZ.map((z,i)=>[z,SHW[i]*1.06,-.092+sp(z)*1.2,-.078+sp(z)]);
+    const rowsUp=SHZ.map((z,i)=>[z,SHW[i]*1.04,-.066,SHT[i]]);
+    const rowsMid=SHZ.map((z,i)=>[z,SHW[i]*1.13,-.080+sp(z),-.054+sp(z)*.9]);
+    const rowsOut=SHZ.map((z,i)=>[z,SHW[i]*1.10,-.092+sp(z)*1.2,-.076+sp(z)]);
     G.add(shLoft(rowsUp,mUp),shLoft(rowsMid,mMid),shLoft(rowsOut,mOut));
     if(P.low){const mLow=sm(P.low,P.patent?.1:.5,P.patent?.3:.05);
       const rl=rowsUp.map(([z,hw,yb,yt],i)=>{const t=i/(SHZ.length-1),f=P.lf[0]+(P.lf[1]-P.lf[0])*t;return[z,hw,yb,yb+(yt-yb)*f]});
       G.add(shLoft(rl,mLow,1.03));}
     // língua, cadarços e colarinho
-    const tg=new THREE.Mesh(new THREE.BoxGeometry(.05,.006,.07),mUp);tg.position.set(0,-.004,.012);tg.rotation.x=.5;G.add(tg);
+    const tg=new THREE.Mesh(new THREE.BoxGeometry(.056,.009,.088),P.tongue?sm(P.tongue,.55,.05):mUp);tg.position.set(0,-.002,.012);tg.rotation.x=.5;G.add(tg);
     for(let i=0;i<5;i++){const z=-.012+i*.024,y=pw(z,SHZ.map((v,j)=>[v,SHT[j]]))+.003;
       const l=new THREE.Mesh(new THREE.CylinderGeometry(.0035,.0035,.07-i*.004,5),mLace);l.rotation.z=Math.PI/2;l.position.set(0,y,z);G.add(l);}
-    const col=new THREE.Mesh(new THREE.TorusGeometry(.036,.006,5,12),id==='aero'?mAcc:mUp);col.rotation.x=Math.PI/2+.2;col.scale.set(1,1.25,1);col.position.set(0,-.004,-.014);G.add(col);
+    const mCuff=P.cuff?sm(P.cuff,.55,.05):(id==='aero'?mAcc:mUp);   // cano médio (mid-top) acolchoado
+    const cuff=new THREE.Mesh(new THREE.CylinderGeometry(.046,.051,.058,16,1,true),mUp);cuff.scale.z=1.18;cuff.position.set(0,.008,-.016);G.add(cuff);
+    const rim=new THREE.Mesh(new THREE.TorusGeometry(.047,.0075,6,16),mCuff);rim.rotation.x=Math.PI/2;rim.scale.set(1,1.18,1);rim.position.set(0,.037,-.016);G.add(rim);
     for(const sx of [1,-1]){
       const lg=new THREE.Mesh(new THREE.SphereGeometry(1,8,6),mAcc);lg.scale.set(.002,.009,.02);lg.position.set(sx*.0545,-.052,.08);
       if(id!=='skel')G.add(lg);
-      if(P.decal){const d=new THREE.Mesh(new THREE.PlaneGeometry(.15,.056),new THREE.MeshBasicMaterial({map:skelTex,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,side:THREE.DoubleSide}));
+      if(P.decal){const d=new THREE.Mesh(new THREE.PlaneGeometry(.15,.056),new THREE.MeshBasicMaterial({map:P.decal==='wing'?wingTex(P.decalCol):skelTex,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,side:THREE.DoubleSide}));
         d.position.set(sx*.0525,-.05,.045);d.rotation.y=sx*Math.PI/2;if(sx>0)d.scale.x=-1;G.add(d);}
       if(P.win){const w=new THREE.Mesh(new THREE.SphereGeometry(1,10,8),new THREE.MeshBasicMaterial({color:P.win}));w.scale.set(.003,.008,.026);w.position.set(sx*.0575,-.078,.01);G.add(w);}
     }
+    G.scale.setScalar(SHS);
     return G;
   };
   const shirtParts=[];const dress=m=>{m.visible=false;shirtParts.push(m);return m};
@@ -3298,7 +3353,7 @@ function createRealisticStreetballPlayer(isAI) {
     const sock=createHumanSegment(0.16,mSock,true,t=>{const r=lerp(0.043,0.037,t);return[r,r*1.02,0,0]},20,6);sock.position.y=-0.23;kj.add(dressShorts(sock));
     const aj=new THREE.Group();aj.position.y=-0.39;kj.add(aj);aj.add(sphere(0.039,mSock,1.05,0.9,1.0));
     const fb=createBlenderOctahedralBone(0.17,0.018,1);fb.rotation.x=Math.PI/2-0.15;fb.position.set(0,-0.05,0);aj.add(fb);
-    const shoeSet={aj,build:buildShoe,cache:{aero:buildShoe('aero')},cur:'aero'};aj.add(shoeSet.cache.aero);
+    const shoeSet={aj,build:id=>buildShoe(id,isL),cache:{aero:buildShoe('aero',isL)},cur:'aero'};aj.add(shoeSet.cache.aero);
     (root.shoeSets=root.shoeSets||[]).push(shoeSet);
     hj.kn=kj;kj.ft=aj;return hj;
   };
@@ -3391,7 +3446,7 @@ function createRealisticStreetballPlayer(isAI) {
   return root;
 }
 
-const SHOE_IDS = ['aero', 'skel', 'aj11', 'aj11b', 'tatum'];
+const SHOE_IDS = ['aero', 'skel', 'aj11', 'aj11b', 'tatum', 'neon', 'bw'];
 function setPlayerPantsMode(p, mode) {
   if (!p) return;
   const isStyle = typeof mode === 'string' && mode.startsWith('style:');
@@ -3538,8 +3593,12 @@ function setPlayerHandPose(m, poseOrGun, dt = 0.016, o = null) {
   const domIsRight = !o || o.hand > 0;
   const dribPhase = o ? (o.bp || 0) * Math.PI * 2 : 0;
   const dribPush = 0.5 - 0.5 * Math.cos(dribPhase);
-  const isTwoHandDunk = !!(o && o.dunk > 0 && o.dunkType === 1);
-  const isEuroLayup = !!(o && o.layup > 0 && o.layupType === 1);
+  const isTwoHandDunk = !!(o && o.dunk > 0 && DUNKBASE[o.dunkType | 0] === 1);
+  const isEuroLayup = !!(o && o.layup > 0 && LAYBASE[o.layupType | 0] === 1);
+
+  // fase da enterrada/bandeja (0..1) para sequenciar os dedos ao longo do movimento
+  let hPh = -1, hKind = 0;
+  if (o && o.dunk > 0) { hPh = 1 - o.dunk / 0.96; hKind = 1; } else if (o && o.layup > 0) { hPh = 1 - o.layup / 0.78; hKind = 2; }
 
   for (const hand of [m.handL, m.handR]) {
     if (!hand || !hand.fingers) continue;
@@ -3647,6 +3706,27 @@ function setPlayerHandPose(m, poseOrGun, dt = 0.016, o = null) {
         spreadMult = 1.95;
       }
 
+      if (hPh >= 0) {                    // DEDOS EM CASCATA (cada dedo atrasa um pouco em relação ao anterior)
+        const d = i * 0.018;
+        if (hKind === 1) {
+          if (isRight || isTwoHandDunk) {  // mão que crava: aperta a bola/aro e depois solta
+            const grip = smoothstep(cl((hPh - 0.54 - d) / 0.10, 0, 1)) * (1 - smoothstep(cl((hPh - 0.78 - d) / 0.10, 0, 1)));
+            c1 -= 0.20 * grip; c2 -= 0.24 * grip; c3 -= 0.18 * grip; spreadMult *= 1 - 0.18 * grip;
+          }
+          const rel = smoothstep(cl((hPh - 0.80 - d) / 0.10, 0, 1));          // solta o aro: dedos relaxam e abrem
+          c1 = lerp(c1, -0.10 - i * 0.015, rel); c2 = lerp(c2, -0.14 - i * 0.015, rel); c3 = lerp(c3, -0.08, rel); spreadMult *= 1 + 0.45 * rel;
+          spreadMult *= 1 + 0.18 * Math.sin(Math.PI * cl((hPh - 0.16) / 0.30, 0, 1));   // abre os dedos na subida
+        } else {
+          if (isEuroLayup ? !isRight : isRight) {   // mão de finalização: dedos sob a bola e rolam em cascata (mindinho -> indicador)
+            const curl = smoothstep(cl((hPh - 0.30) / 0.14, 0, 1)) * (1 - smoothstep(cl((hPh - 0.55 - (3 - i) * 0.03) / 0.10, 0, 1)));
+            c1 = lerp(c1, -0.42 - i * 0.03, curl); c2 = lerp(c2, -0.56, curl); c3 = lerp(c3, -0.40, curl);
+          } else {
+            spreadMult *= 1 + 0.25 * Math.sin(Math.PI * cl((hPh - 0.26) / 0.46, 0, 1));    // mão de proteção bem aberta
+          }
+          const rel2 = smoothstep(cl((hPh - 0.84 - i * 0.015) / 0.10, 0, 1));
+          c1 = lerp(c1, -0.10 - i * 0.015, rel2); c2 = lerp(c2, -0.14, rel2); c3 = lerp(c3, -0.08, rel2);
+        }
+      }
       const targetSpread = (fg.baseSpread || 0) * spreadMult;
       fg.f1.rotation.x += (c1 - fg.f1.rotation.x) * k;
       fg.f2.rotation.x += (c2 - fg.f2.rotation.x) * k;
@@ -3673,6 +3753,15 @@ function setPlayerHandPose(m, poseOrGun, dt = 0.016, o = null) {
         tz = -sg * 0.46; ty = sg * 0.30; tx = -0.34; t1x = -0.16; t2x = -0.18;
       } else if (mode === 'def_active') {
         tz = -sg * 0.64; ty = sg * 0.42; tx = -0.22; t1x = -0.08; t2x = -0.16;
+      }
+      if (hPh >= 0) {                    // polegar acompanha: envolve a bola/aro na cravada e se recolhe no finger roll
+        if (hKind === 1 && (isRight || isTwoHandDunk)) {
+          const gr = smoothstep(cl((hPh - 0.54) / 0.10, 0, 1)) * (1 - smoothstep(cl((hPh - 0.78) / 0.10, 0, 1)));
+          tx -= 0.18 * gr; t1x -= 0.20 * gr; t2x -= 0.18 * gr; tz += sg * 0.10 * gr;
+        } else if (hKind === 2 && (isEuroLayup ? !isRight : isRight)) {
+          const cu = smoothstep(cl((hPh - 0.30) / 0.14, 0, 1)) * (1 - smoothstep(cl((hPh - 0.58) / 0.10, 0, 1)));
+          tx -= 0.12 * cu; t1x -= 0.14 * cu;
+        }
       }
       th.rotation.z += (tz - th.rotation.z) * k;
       th.rotation.y += (ty - th.rotation.y) * k;
@@ -4275,11 +4364,14 @@ function setPlayerHandPose(m, poseOrGun, dt = 0.016, o = null) {
   const shoeCards=[];
   const shoePrev=d=>{const c=document.createElement('canvas');c.width=280;c.height=120;c.className='full';const x=c.getContext('2d');
     const h=n=>'#'+n.toString(16).padStart(6,'0');x.fillStyle='#161b26';x.fillRect(0,0,280,120);
-    x.fillStyle=h(d.out);x.beginPath();x.roundRect(40,86,200,12,6);x.fill();
-    x.fillStyle=h(d.mid);x.beginPath();x.roundRect(40,70,200,18,6);x.fill();
-    x.fillStyle=h(d.up);x.beginPath();x.moveTo(44,72);x.lineTo(46,34);x.quadraticCurveTo(70,24,96,40);x.quadraticCurveTo(140,60,190,56);x.quadraticCurveTo(240,56,242,72);x.closePath();x.fill();
-    if(d.low){x.fillStyle=h(d.low);x.beginPath();x.moveTo(44,72);x.lineTo(45,54);x.quadraticCurveTo(140,68,200,52);x.quadraticCurveTo(240,54,242,72);x.closePath();x.fill()}
-    x.fillStyle=h(d.acc);x.beginPath();x.arc(150,66,5,0,7);x.fill();return c};
+    const one=(d,ox,sc)=>{x.save();x.translate(ox,10);x.scale(sc,sc);
+      x.fillStyle=h(d.out);x.beginPath();x.roundRect(40,86,200,12,6);x.fill();
+      x.fillStyle=h(d.mid);x.beginPath();x.roundRect(40,70,200,18,6);x.fill();
+      x.fillStyle=h(d.up);x.beginPath();x.moveTo(44,72);x.lineTo(46,22);x.quadraticCurveTo(70,12,96,36);x.quadraticCurveTo(140,60,190,56);x.quadraticCurveTo(240,56,242,72);x.closePath();x.fill();
+      if(d.low){x.fillStyle=h(d.low);x.beginPath();x.moveTo(44,72);x.lineTo(45,54);x.quadraticCurveTo(140,68,200,52);x.quadraticCurveTo(240,54,242,72);x.closePath();x.fill()}
+      x.fillStyle=h(d.acc);x.beginPath();x.arc(150,66,5,0,7);x.fill();x.restore()};
+    if(d.sides){one(Object.assign({},d,d.sides.L),-8,0.64);one(Object.assign({},d,d.sides.R),122,0.64)}else one(d,0,1);
+    return c};
   for(const id of SHOE_IDS){
     const d=SHOE_DEFS[id],card=document.createElement('div');
     card.className='wc'+(myOutfit.shoes===id?' on':'');
@@ -4505,7 +4597,7 @@ function recordReplaySnapshot() {
 }
 
 function triggerPendingReplay(label, scorerWho) {
-  if (NET.role || MODE !== '1v1') return; // replay desativado no modo online
+  if (NET.role === 'guest' || MODE !== '1v1') return; // no online só o anfitrião dispara; o convidado recebe por mensagem
   replayState = {
     pending: true,
     delay: 0.65,
@@ -4517,6 +4609,31 @@ function triggerPendingReplay(label, scorerWho) {
   };
 }
 
+// ===== REPLAY ONLINE: todos precisam apertar ESPAÇO (2/2) para pular =====
+const rpSkip = { me: false, other: false };
+function rpUpdateSkipTxt() {
+  const el = $('replay-skip-txt'); if (!el) return;
+  const n = (rpSkip.me ? 1 : 0) + (rpSkip.other ? 1 : 0);
+  el.innerHTML = NET.live
+    ? 'Pressione <span class="key-badge">ESPAÇO</span> para pular — <b>' + n + '/2</b>' + (rpSkip.me ? ' (aguardando o outro jogador)' : '')
+    : 'Pressione <span class="key-badge">ESPAÇO</span> para pular';
+}
+function rpBroadcast() { if (NET.role === 'host' && NET.live) netSend({ t: 'rk', h: rpSkip.me, g: rpSkip.other }); }
+function endReplayNet() {                    // só o anfitrião encerra; o convidado obedece à mensagem 'rs'
+  stopReplayAndContinue();
+  if (NET.role === 'host' && NET.live) netSend({ t: 'rs' });
+}
+function stepReplayPlayback(dt) {
+  const total = replayState.frames.length;
+  const progress = replayState.cursor / Math.max(1, total);
+  const speedMult = (progress > 0.52 && progress < 0.86) ? 0.42 : 0.92;
+  $('replay-speed').textContent = speedMult < 0.6 ? 'CÂMERA CINEMA • CÂMERA LENTA 0.4X' : 'CÂMERA DE TRANSMISSÃO • 1.0X';
+  replayState.cursor += (dt / GAME_SPEED) * 60 * speedMult;
+  if (replayState.cursor >= total - 1) {
+    if (NET.role === 'guest') replayState.cursor = total - 1;   // segura o último quadro até o anfitrião liberar
+    else endReplayNet();
+  }
+}
 function startActiveReplay() {
   if (replayBuffer.length < 20) {
     replayState = null;
@@ -4527,6 +4644,8 @@ function startActiveReplay() {
   replayState.frames = replayBuffer.slice(-Math.min(replayBuffer.length, 175));
   replayState.cursor = 0;
 
+  rpSkip.me = false; rpSkip.other = false; rpUpdateSkipTxt();
+  if (NET.role === 'host' && NET.live) netSend({ t: 'rp', label: replayState.label, who: replayState.scorerWho === 'p' ? 'a' : 'p' });
   $('replay-label').textContent = replayState.label;
   $('replay-hud').classList.add('active');
   $('stamina-container').style.opacity = '0';
@@ -5001,6 +5120,13 @@ function netMapMsg(m) {
 
 function netGuestData(m) {
   if (!m) return;
+  if (m.t === 'rp') {                         // anfitrião iniciou o replay: toca o mesmo replay aqui
+    replayState = { pending: true, delay: 0, active: false, frames: [], cursor: 0, scorerWho: m.who, label: m.label };
+    startActiveReplay(); return;
+  }
+  if (m.t === 'rk') { rpSkip.other = !!m.h; rpSkip.me = rpSkip.me || !!m.g; rpUpdateSkipTxt(); return; }
+  if (m.t === 'rs') { if (replayState) stopReplayAndContinue(); return; }
+  if (!m) return;
   if (m.t === 's') {
     const S = NET.sf || (NET.sf = {});
     for (const k of ['P', 'A', 'B', 'TM', 'A2']) { if (m[k] === null) S[k] = null; else if (m[k]) S[k] = Object.assign(S[k] || {}, m[k]); }
@@ -5298,6 +5424,17 @@ function getPlayerAimErrorToRim(S) {
   return { aimYaw, hoopYaw, aimErr: angleDiff(aimYaw, hoopYaw) };
 }
 
+// Sorteia um tipo evitando repetir os últimos usados por este jogador (sem sequência previsível)
+function pickVariety(S, key, n) {
+  const hist = S._hist || (S._hist = {});
+  const h = hist[key] || (hist[key] = []);
+  const recent = h.slice(-Math.min(4, n - 1));
+  const pool = [];
+  for (let i = 0; i < n; i++) if (!recent.includes(i)) pool.push(i);
+  const t = pool[Math.floor(R() * pool.length)];
+  h.push(t); if (h.length > 6) h.shift();
+  return t;
+}
 function tryStartDunkOrLayup(S) {
   if (B.s !== 'held' || B.owner !== S) return false;
   const distToRim = D(S, { x: HX, y: HY });
@@ -5308,7 +5445,7 @@ function tryStartDunkOrLayup(S) {
 
   if (S === P && aimingAtBasket && isSprinting && distToRim <= 112 && distToRim >= 18) {
     S.dunk = 0.96;
-    S.dunkType = (S.dunkType + 1 + Math.floor(R() * 2)) % 4;
+    S.dunkType = pickVariety(S, 'dunk', 8);
     S.dunkScored = false;
     S.lock = 0.96;
     drainStamina(S, 24, 0.95);
@@ -5319,7 +5456,11 @@ function tryStartDunkOrLayup(S) {
       'ONE-HAND SLAM DUNK!',
       'TWO-HAND POWER DUNK!',
       'TOMAHAWK DRIVE DUNK!',
-      'GATHER CLUTCH SLAM!'
+      'GATHER CLUTCH SLAM!',
+      'WINDMILL DUNK!',
+      '360 SPIN DUNK!',
+      'REVERSE DUNK!',
+      'SHOWTIME WINGS SLAM!'
     ];
     say(dunkNames[S.dunkType], 1.1, 'good');
     return true;
@@ -5327,7 +5468,7 @@ function tryStartDunkOrLayup(S) {
 
   if (aimingAtBasket && distToRim <= 88 && S.v > 42 && (!S.exhausted || S.stamina >= 10)) {
     S.layup = 0.78;
-    S.layupType = ((S.layupType || 0) + 1 + Math.floor(R() * 2)) % 4;
+    S.layupType = pickVariety(S, 'layup', 8);
     S.layupScored = false;
     S.lock = 0.78;
     drainStamina(S, 12, 0.7);
@@ -5339,7 +5480,11 @@ function tryStartDunkOrLayup(S) {
         'BANDEJA FINGER ROLL!',
         'BANDEJA EURO STEP!',
         'BANDEJA FLOATER / TEARDROP!',
-        'BANDEJA REVERSE ACROBÁTICA!'
+        'BANDEJA REVERSE ACROBÁTICA!',
+        'BANDEJA SCOOP (POR BAIXO)!',
+        'REVERSE NA TÁBUA!',
+        'GANCHO (HOOK LAYUP)!',
+        'BANDEJA DE FORÇA!'
       ];
       say(layupNames[S.layupType], 1.0, 'good');
     }
@@ -5664,16 +5809,27 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyM') { window.toggleMuteAudio && window.toggleMuteAudio(); return; }
   if (e.code === 'KeyN') { if (typeof audio !== 'undefined') audio.toggleBeat(); return; }
   if (inStartMenu) return;
+  if (e.code === 'KeyL') { toggleCamLock(); return; }   // R já reinicia a partida, por isso a câmera usa L
   K[e.code] = true;
 
-  if (NET.role === 'guest') { netSend({ t: 'd', c: e.code }); return; }
+  if (NET.role === 'guest') {
+    if (e.code === 'Space' && replayState && replayState.active) { rpSkip.me = true; rpUpdateSkipTxt(); }
+    netSend({ t: 'd', c: e.code }); return;
+  }
   gameKeyDown(e.code);
 });
 
 function gameKeyDown(code) {
   // Pular o replay com ESPAÇO
   if (code === 'Space' && replayState && replayState.active) {
-    stopReplayAndContinue();
+    if (!NET.live) { stopReplayAndContinue(); return; }
+    if (NET.role === 'guest') {               // chamada direta (ex.: botão no celular): avisa o anfitrião
+      if (!rpSkip.me) { rpSkip.me = true; rpUpdateSkipTxt(); netSend({ t: 'd', c: 'Space' }); }
+      return;
+    }
+    if (NET.swapped) rpSkip.other = true; else rpSkip.me = true;   // no anfitrião, 'swapped' = quem apertou foi o convidado
+    rpUpdateSkipTxt();
+    if (rpSkip.me && rpSkip.other) endReplayNet(); else rpBroadcast();
     return;
   }
 
@@ -6092,6 +6248,15 @@ function handleRimAndBackboardPhysics(dt) {
   }
 }
 
+// Variação de animação: sorteia 1x quando a ação começa (timer reinicia) e mantém até o fim
+function varOf(o, key, tm, dur, n) {
+  const v = o._v || (o._v = {});
+  const last = v[key + 'L'] || 0;
+  if (tm > last + 1e-6 || v[key] === undefined) v[key] = Math.floor(Math.random() * n);
+  v[key + 'L'] = tm;
+  return tm > 0 ? v[key] : 0;
+}
+
 // ===== DEFESA COM C: bloqueio automático só quando a bola vem na direção do jogador =====
 function deflectBall(d, kind) {
   const a = Math.atan2(B.y - d.y, B.x - d.x);
@@ -6426,6 +6591,7 @@ function cpuAgent(E, dt) {
 }
 
 function updatePhysicsStep(dt) {
+  if (NET.role === 'guest' && !inStartMenu && replayState && replayState.active) { stepReplayPlayback(dt); return; }
   if (NET.role === 'guest' && !inStartMenu) { guestStep(dt); return; }
   if (NET.live && !inStartMenu) netTick(dt);
   if (inStartMenu) {
@@ -6434,19 +6600,7 @@ function updatePhysicsStep(dt) {
   }
 
   // Se o replay estiver ativo na tela, congela a física e avança o playback
-  if (replayState && replayState.active) {
-    const total = replayState.frames.length;
-    // Efeito Slow-Motion cinematográfico perto do clímax da cesta
-    const progress = replayState.cursor / Math.max(1, total);
-    const speedMult = (progress > 0.52 && progress < 0.86) ? 0.42 : 0.92;
-    $('replay-speed').textContent = speedMult < 0.6 ? 'CÂMERA CINEMA • CÂMERA LENTA 0.4X' : 'CÂMERA DE TRANSMISSÃO • 1.0X';
-
-    replayState.cursor += (dt / GAME_SPEED) * 60 * speedMult; // replay em velocidade normal
-    if (replayState.cursor >= total - 1) {
-      stopReplayAndContinue();
-    }
-    return;
-  }
+  if (replayState && replayState.active) { stepReplayPlayback(dt); return; }
 
   if (replayState && replayState.pending) {
     replayState.delay -= dt;
@@ -6517,7 +6671,7 @@ function updatePhysicsStep(dt) {
         const glideSp = Math.min(165, Math.max(115, dl * 2.1));
         const perpX = -dy / dl, perpY = dx / dl;
         // Se for bandeja Euro Step (layupType === 1), o jogador faz um deslocamento lateral elástico na passada
-        const euroSide = (o.layupType === 1) ? Math.sin(progress / 0.56 * Math.PI * 2) * 58 : 0;
+        const euroSide = (LAYBASE[o.layupType | 0] === 1) ? Math.sin(progress / 0.56 * Math.PI * 2) * 58 : 0;
         o.vx = (dx / dl) * glideSp + perpX * euroSide;
         o.vy = (dy / dl) * glideSp + perpY * euroSide;
         o.x = cl(o.x + o.vx * dt, 22, W - 22);
@@ -6541,7 +6695,7 @@ function updatePhysicsStep(dt) {
           const targetZ = (RIM_Y - 0.08) / s;
           const distToRim = Math.hypot(HX - sx, HY - sy);
           // Floater (layupType === 2) tem um arco mais alto e suave
-          const flightT = o.layupType === 2
+          const flightT = LAYBASE[o.layupType | 0] === 2
             ? cl(0.46 + distToRim / 190, 0.48, 0.68)
             : cl(0.38 + distToRim / 210, 0.42, 0.62);
 
@@ -6902,8 +7056,10 @@ function syncBiomechanics(o, m, dt, t) {
   const legArr = o.sb > 0 ? smoothstep(cl((sbp - 0.08) / 0.40, 0, 1)) : 0;
   const sbJab = o.sb > 0 ? Math.sin(Math.PI * cl(sbp / 0.16, 0, 1)) * (1 - legArr) : 0;
   const torsoPh = o.sb > 0 ? smoothstep(cl((sbp - 0.30) / 0.45, 0, 1)) : 0;
-  const sbPelvis = o.sb > 0 ? lerp(0.12 * legArr, -0.02, torsoPh) : 0;
-  const sbChest = o.sb > 0 ? lerp(0.20 * legArr, -0.06, torsoPh) : 0;
+  const sbPush = o.sb > 0 ? smoothstep(cl((sbp - 0.14) / 0.16, 0, 1)) : 0;
+  const sbSettle = o.sb > 0 ? smoothstep(cl((sbp - 0.50) / 0.30, 0, 1)) : 0;
+  const sbPelvis = o.sb > 0 ? lerp(lerp(0.14, -0.12, sbPush), -0.03, sbSettle) : 0;   // frente (plant) -> trás (impulso) -> base estável
+  const sbChest = o.sb > 0 ? lerp(lerp(0.22, -0.14, sbPush), -0.08, sbSettle) : 0;
   const sds = Math.sin(Math.PI * sdp);
   const bbs = Math.sin(Math.PI * bbp);
   const cxs = Math.sin(Math.PI * cxp);
@@ -6944,7 +7100,7 @@ function syncBiomechanics(o, m, dt, t) {
     else crouchOffset = -0.14 * Math.sin(Math.PI * ((dp - 0.86) / 0.14));
   } else if (o.layup > 0) {
     const lp = 1 - o.layup / 0.78;
-    const lType = o.layupType || 0;
+    const lType = LAYBASE[o.layupType | 0];
     if (lType === 1) {
       // EURO STEP: duas passadas laterais marcadas antes de subir
       if (lp < 0.28) crouchOffset = -0.14 * Math.sin((lp / 0.28) * Math.PI);
@@ -7023,17 +7179,22 @@ function syncBiomechanics(o, m, dt, t) {
     }
   }
 
+  if (o.dunk > 0) jumpY *= DUNKJ[o.dunkType | 0] || 1; else if (o.layup > 0) jumpY *= LAYJ[o.layupType | 0] || 1;
   m.position.set(o.x * s, T('rootY', jumpY, 22), o.y * s);
-  const reverseYaw = (o.layup > 0 && o.layupType === 3)
+  const reverseYaw = (o.layup > 0 && LAYBASE[o.layupType | 0] === 3)
     ? Math.sin(Math.PI * cl((1 - o.layup / 0.78 - 0.12) / 0.72, 0, 1)) * 0.78
     : 0;
-  m.rotation.y = o.ry + (o.spin > 0 ? smoothstep(spp) * Math.PI * 2 * o.hand : 0) + reverseYaw;
+  const extraYaw = o.dunk > 0
+    ? (o.dunkType === 5 ? Math.PI * 2 * smoothstep(cl((1 - o.dunk / 0.96 - 0.18) / 0.58, 0, 1))
+      : (o.dunkType === 6 ? Math.PI * Math.sin(Math.PI * cl((1 - o.dunk / 0.96 - 0.16) / 0.70, 0, 1)) : 0))
+    : (o.layup > 0 && o.layupType === 6 ? 1.35 * Math.sin(Math.PI * cl((1 - o.layup / 0.78 - 0.1) / 0.8, 0, 1)) : 0);
+  m.rotation.y = o.ry + (o.spin > 0 ? smoothstep(spp) * Math.PI * 2 * o.hand : 0) + reverseYaw + extraYaw;
 
   const pelvis = m.pelvis, waist = m.waist, ch = m.ch, neck = m.neck, hd = m.hd;
   const strideWave = Math.sin(ph) * amp;
   const strideCos = Math.cos(ph) * amp;
 
-  const euroHipX = (o.layup > 0 && o.layupType === 1)
+  const euroHipX = (o.layup > 0 && LAYBASE[o.layupType | 0] === 1)
     ? Math.sin((1 - o.layup / 0.78) * Math.PI * 2.2) * 0.13
     : 0;
   const hipShiftX = (o.cx > 0 ? -o.hand * 0.12 * cxs : 0)
@@ -7104,7 +7265,7 @@ function syncBiomechanics(o, m, dt, t) {
     else { targetPelvisRx = 0.08; targetChestRx = 0.10; }
   } else if (o.layup > 0) {
     const lp = 1 - o.layup / 0.78;
-    const lType = o.layupType || 0;
+    const lType = LAYBASE[o.layupType | 0];
     if (lType === 1) {
       // Euro Step: inclinação lateral do tronco acompanhando a troca de direção
       const sway = Math.sin(lp * Math.PI * 2.2);
@@ -7186,7 +7347,7 @@ function syncBiomechanics(o, m, dt, t) {
     }
   } else if (o.layup > 0) {
     const lp = 1 - o.layup / 0.78;
-    const lType = o.layupType || 0;
+    const lType = LAYBASE[o.layupType | 0];
     const airSin = Math.sin(Math.PI * cl((lp - 0.12) / 0.75, 0, 1));
     if (lType === 1) {
       // Euro Step: passadas longas alternadas esquerda -> direita e elevação da perna esquerda
@@ -7247,10 +7408,15 @@ function syncBiomechanics(o, m, dt, t) {
     }
     hipL_z = 0.16 * lunge; hipR_z = -0.16 * lunge;
   } else if (o.sb > 0) {
-    // Pernas primeiro: pequeno jab, depois base larga atrás com joelhos bem flexionados, mantida até o fim
-    hipL_x = -0.28 * sbJab - 0.62 * legArr; kneeL_x = 0.2 + 0.30 * sbJab + 1.05 * legArr;
-    hipR_x = -0.14 * sbJab - 0.50 * legArr; kneeR_x = 0.2 + 0.20 * sbJab + 0.95 * legArr;
-    hipL_z = 0.03 + 0.20 * legArr; hipR_z = -0.03 - 0.20 * legArr;
+    // STEP-BACK NBA: 1) planta o pé da frente (oposto à mão que dribla) 2) empurra para trás com a perna da frente 3) aterrissa em base larga e funda
+    const leadL = (o.prevHand || o.hand) > 0;
+    const push = smoothstep(cl((sbp - 0.14) / 0.18, 0, 1)), land = smoothstep(cl((sbp - 0.42) / 0.20, 0, 1));
+    const lH = lerp(lerp(-0.50, 0.30, push), -0.70, land), lK = lerp(lerp(0.80, 0.25, push), 1.05, land);
+    const tH = lerp(lerp(0.20, -0.20, push), -0.48, land), tK = lerp(lerp(0.45, 0.70, push), 0.95, land);
+    const zz = 0.03 + 0.23 * push;
+    if (leadL) { hipL_x = lH; kneeL_x = lK; hipR_x = tH; kneeR_x = tK; }
+    else { hipR_x = lH; kneeR_x = lK; hipL_x = tH; kneeL_x = tK; }
+    hipL_z = zz; hipR_z = -zz;
     ankleL_x = -hipL_x * 0.55 - kneeL_x * 0.42;
     ankleR_x = -hipR_x * 0.55 - kneeR_x * 0.42;
   } else {
@@ -7362,7 +7528,14 @@ function syncBiomechanics(o, m, dt, t) {
   // POSTURA DE BASQUETE: joelhos e quadril mais flexionados, base um pouco mais aberta
   const gndW = cl((0.12 - m.position.y) / 0.1, 0, 1);
   {
-    const stance = (0.23 + 0.10 * idleFactor + (def ? 0.06 : 0) + (hasB ? 0.04 : 0)) * gndW;
+    const stance0 = (0.23 + 0.10 * idleFactor + (def ? 0.06 : 0) + (hasB ? 0.04 : 0)) * gndW * (o.sb > 0 ? 0.3 : 1);
+    let vDip = 0;
+    if (o.cx > 0) vDip = [0, 0.12, 0.04][varOf(o, 'cx', o.cx, CX_DUR, 3)];
+    else if (o.sd > 0) vDip = [0.03, 0.10][varOf(o, 'sd', o.sd, SD_DUR, 2)];
+    else if (o.steal > 0) vDip = [0.05, 0.16, 0.08, 0.10][varOf(o, 'stl', o.steal, STEAL_DUR, 4)];
+    else if (o.cut > 0) vDip = [0.02, 0.06, 0.10][varOf(o, 'cut', o.cut, 0.40, 3)];
+    else if (hasB && idleFactor > 0.6 && !o.bb && !o.spin) vDip = [0, 0.09, -0.05][Math.floor(performance.now() / 2400 + (o === P ? 0 : 1.7)) % 3];   // drible parado: normal / baixo protegido / alto showtime
+    const stance = Math.max(0.08, stance0 + vDip * gndW);
     hipL_x += -stance + 0.16 * leanK; hipR_x += -stance + 0.16 * leanK;
     kneeL_x += stance * 1.85; kneeR_x += stance * 1.85;
     hipL_z += 0.03 * gndW; hipR_z -= 0.03 * gndW;
@@ -7377,7 +7550,7 @@ function syncBiomechanics(o, m, dt, t) {
   m.tR.kn.ft.rotation.x = T('ankRx', ankleR_x, legSp + 2);
   // CONTATO COM O CHÃO: o tênis nunca atravessa o piso; pé apoiado fica plano e o quadril desce/sobe conforme a flexão
   {
-    const SOLE = [[0, -.092, -.085], [0, -.092, .11], [.05, -.092, .05], [-.05, -.092, .05], [0, -.082, .176]];
+    const SOLE = [[0, -.092, -.085], [0, -.092, .11], [.056, -.092, .05], [-.056, -.092, .05], [0, -.082, .176]].map(q => [q[0] * SHS, q[1] * SHS, q[2] * SHS]);
     const _p = (m._gp = m._gp || new THREE.Vector3());
     const link = n => { n.updateMatrix(); n.matrixWorld.multiplyMatrices(n.parent.matrixWorld, n.matrix); };
     const solve = () => {
@@ -7424,7 +7597,7 @@ function syncBiomechanics(o, m, dt, t) {
 
   if (o.dunk > 0) {
     const dp = 1 - o.dunk / 0.96;
-    if (o.dunkType === 1) {
+    if (DUNKBASE[o.dunkType | 0] === 1) {
       // TWO-HAND POWER DUNK: palmas voltadas uma para a outra segurando a bola com naturalidade acima da cabeça e flexão palmar limpa na cravada
       if (dp < 0.54) {
         const cock = smoothstep(dp / 0.54);
@@ -7445,7 +7618,7 @@ function syncBiomechanics(o, m, dt, t) {
         wR_y = lerp(0.32, 0.12, slam);   wL_y = lerp(-0.32, -0.12, slam);
         handMode = 'dunk_slam';
       }
-    } else if (o.dunkType === 2) {
+    } else if (DUNKBASE[o.dunkType | 0] === 2) {
       // TOMAHAWK DRIVE DUNK: recolhe com as duas mãos no gather, arma atrás da cabeça com punho alinhado e crava firme
       if (dp < 0.28) {
         const gth = smoothstep(dp / 0.28);
@@ -7506,9 +7679,33 @@ function syncBiomechanics(o, m, dt, t) {
         handMode = 'dunk_slam';
       }
     }
+    if (o.dunkType === 4) {            // WINDMILL: braço faz um círculo completo antes da cravada
+      const env = smoothstep(cl((dp - 0.14) / 0.08, 0, 1)) * (1 - smoothstep(cl((dp - 0.52) / 0.08, 0, 1)));
+      const wm = cl((dp - 0.20) / 0.34, 0, 1);
+      aR_x = lerp(aR_x, -1.7 - Math.PI * 2 * wm, env); eR_x = lerp(eR_x, 0.15, env); aR_z = lerp(aR_z, -0.05, env);
+    } else if (o.dunkType === 7) {     // SHOWTIME: braço livre aberto como asa
+      const env = Math.sin(Math.PI * cl((dp - 0.16) / 0.50, 0, 1));
+      aL_z = lerp(aL_z, 1.15, env); aL_x = lerp(aL_x, -0.7, env); eL_x = lerp(eL_x, 0.2, env);
+      aR_z = lerp(aR_z, -0.35, env * 0.6);
+    }
+    {   // ARTICULAÇÃO NATURAL DA ENTERRADA (vale para todos os tipos)
+      const load = Math.sin(Math.PI * cl(dp / 0.16, 0, 1));                       // contra-movimento: braços descem junto com o agachamento
+      aR_x += 0.55 * load; aL_x += 0.55 * load; eR_x -= 0.25 * load; eL_x -= 0.25 * load;
+      const snap = Math.sin(Math.PI * cl((dp - 0.56) / 0.16, 0, 1));              // estalo de punho na cravada
+      wR_x -= 0.30 * snap; wL_x -= 0.20 * snap; wR_y += 0.10 * snap;
+      const hang = smoothstep(cl((dp - 0.64) / 0.08, 0, 1)) * (1 - smoothstep(cl((dp - 0.78) / 0.06, 0, 1)));   // pendura no aro: cotovelos cedem
+      aR_x += 0.14 * hang; aL_x += 0.10 * hang; eR_x += 0.40 * hang; eL_x += 0.30 * hang;
+      const land = smoothstep(cl((dp - 0.80) / 0.16, 0, 1));                      // solta o aro e abre os braços para equilíbrio na queda
+      aR_x = lerp(aR_x, -0.45, land); aL_x = lerp(aL_x, -0.45, land);
+      aR_z = lerp(aR_z, -0.62, land); aL_z = lerp(aL_z, 0.62, land);
+      eR_x = lerp(eR_x, 0.55, land);  eL_x = lerp(eL_x, 0.55, land);
+      wR_x = lerp(wR_x, -0.10, land); wL_x = lerp(wL_x, -0.10, land);
+      aR_y = lerp(aR_y, 0, land);     aL_y = lerp(aL_y, 0, land);
+      if (dp > 0.84) handMode = 'relaxed';
+    }
   } else if (o.layup > 0) {
     const lp = 1 - o.layup / 0.78;
-    const lType = o.layupType || 0;
+    const lType = LAYBASE[o.layupType | 0];
     handMode = lp > 0.42 ? (lType === 2 ? 'shoot_follow' : 'finger_roll') : 'ball_cup';
     if (lType === 1) {
       // VARIAÇÃO 1 — EURO STEP: balança a bola protegida com as duas mãos e finaliza de Finger Roll com a mão esquerda supinada
@@ -7589,6 +7786,31 @@ function syncBiomechanics(o, m, dt, t) {
         wL_x = -0.14;                   wL_y = -0.32;
       }
     }
+    const lt = o.layupType | 0;
+    if (lt === 4) {                    // SCOOP: bola solta por baixo, braço varrendo de baixo para cima
+      const u = smoothstep(cl((lp - 0.18) / 0.5, 0, 1));
+      aR_x = lerp(0.25, -2.0, u); eR_x = lerp(0.55, 0.22, u); aR_z = -0.14; wR_x = lerp(0.25, -0.2, u);
+    } else if (lt === 6) {             // GANCHO: braço de fora abre e passa por cima da cabeça
+      const u = smoothstep(cl((lp - 0.2) / 0.45, 0, 1));
+      aR_x = lerp(-1.1, -0.7, u); aR_z = -(0.5 + 1.5 * u); eR_x = lerp(0.8, 0.1, u);
+      aL_x = -1.1; aL_z = 0.5; eL_x = 1.0;
+    } else if (lt === 7) {             // FORÇA: duas mãos protegendo a bola na subida
+      const u = smoothstep(cl((lp - 0.2) / 0.5, 0, 1));
+      aR_x = aL_x = lerp(-1.1, -2.0, u); eR_x = eL_x = lerp(1.0, 0.35, u); aR_z = -0.1; aL_z = 0.1;
+    }
+    {   // ARTICULAÇÃO NATURAL DA BANDEJA (vale para todos os tipos)
+      const tuck = Math.sin(Math.PI * cl(lp / 0.24, 0, 1));                       // protege a bola no gather
+      eR_x += 0.22 * tuck; eL_x += 0.22 * tuck; aR_x += 0.12 * tuck; aL_x += 0.12 * tuck;
+      const guard = Math.sin(Math.PI * cl((lp - 0.26) / 0.46, 0, 1));             // mão de fora sobe protegendo a bola do defensor
+      if (lType !== 1 && lt !== 6 && lt !== 7) { aL_x = lerp(aL_x, -1.55, guard * 0.7); eL_x = lerp(eL_x, 1.05, guard * 0.7); aL_z = lerp(aL_z, 0.28, guard * 0.7); }
+      const rel = Math.sin(Math.PI * cl((lp - 0.50) / 0.26, 0, 1));               // rolada de punho na soltura
+      wR_x -= 0.38 * rel; wR_y -= 0.22 * rel; eR_x -= 0.12 * rel;
+      const land = smoothstep(cl((lp - 0.78) / 0.20, 0, 1));                      // follow-through e abertura dos braços na queda
+      aR_x = lerp(aR_x, -0.50, land); aL_x = lerp(aL_x, -0.45, land);
+      aR_z = lerp(aR_z, -0.55, land); aL_z = lerp(aL_z, 0.55, land);
+      eR_x = lerp(eR_x, 0.60, land);  eL_x = lerp(eL_x, 0.60, land);
+      if (lp > 0.84) handMode = 'relaxed';
+    }
   } else if (o.block > 0) {
     const bp = 1 - o.block / 0.68;
     const reach = Math.sin(Math.PI * cl(bp * 1.15, 0, 1));
@@ -7596,6 +7818,17 @@ function syncBiomechanics(o, m, dt, t) {
     eR_x = 0.20; eL_x = 0.26; aR_z = -0.22; aL_z = 0.22;
     wR_x = -0.10; wL_x = -0.10;
     wR_y = 0.08; wL_y = -0.08;
+    const bv = varOf(o, 'blk', o.block, 0.68, 4);
+    if (bv === 1) {            // toco de um braço (direito) com o outro protegendo
+      aR_x = -2.40 - reach * 0.2; aR_z = -0.12; eR_x = 0.08; wR_x = -0.2;
+      aL_x = -1.15; aL_z = 0.40; eL_x = 1.0;
+    } else if (bv === 2) {     // toco de um braço (esquerdo)
+      aL_x = -2.40 - reach * 0.2; aL_z = 0.12; eL_x = 0.08; wL_x = -0.2;
+      aR_x = -1.15; aR_z = -0.40; eR_x = 1.0;
+    } else if (bv === 3) {     // perseguição: braço esticado de lado, alcançando de trás
+      aR_x = -1.95 - reach * 0.3; aR_z = -0.62 - reach * 0.2; aR_y = -0.3; eR_x = 0.05;
+      aL_x = -0.6; aL_z = 0.5; eL_x = 0.9;
+    }
     handMode = 'def_active';
   } else if (o.cut > 0) {
     // CORTE (bola baixa): o braço do lado da bola varre de cima para baixo e para fora, cortando a trajetória; o outro protege
@@ -7610,6 +7843,14 @@ function syncBiomechanics(o, m, dt, t) {
       aL_x = ax; aL_z = az; eL_x = ee; wL_x = -0.30 * kk; wL_y = -0.20;
       aR_x = -0.70; aR_z = -0.50; eR_x = 1.05; wR_y = 0.20;
     }
+    const cv = varOf(o, 'cut', o.cut, 0.40, 3);
+    if (cv === 1) {            // corte de costas da mão, varrendo de baixo para cima
+      if (o.cutSide > 0) { aR_x = lerp(-0.25, -1.15, kk); aR_z = -lerp(0.70, 0.30, kk); eR_x = 0.35; }
+      else { aL_x = lerp(-0.25, -1.15, kk); aL_z = lerp(0.70, 0.30, kk); eL_x = 0.35; }
+    } else if (cv === 2) {     // corte curto e seco, sem preparação
+      if (o.cutSide > 0) { aR_x = -0.55 - 0.3 * kk; aR_z = -(0.35 + 0.4 * kk); eR_x = 0.55; }
+      else { aL_x = -0.55 - 0.3 * kk; aL_z = 0.35 + 0.4 * kk; eL_x = 0.55; }
+    }
   } else if (o.steal > 0) {
     // Ataque rápido: o braço do lado da bola dispara, estende e dá um tapa (flick de punho) no contato
     const reach = stealK;
@@ -7623,6 +7864,17 @@ function syncBiomechanics(o, m, dt, t) {
       aL_x = -1.05 - 0.95 * reach + 0.50 * stealW; eL_x = 0.80 - 0.70 * reach + 0.55 * stealW; aL_z = 0.12 + 0.26 * reach; aL_y = 0.10 * reach;
       wL_x = -0.18 * reach - 0.40 * slap; wL_y = -0.22;
       aR_x = -0.50; eR_x = 0.85; aR_z = -0.30 - 0.12 * reach;
+    }
+    const sv = varOf(o, 'stl', o.steal, STEAL_DUR, 4);
+    if (sv === 1) {            // POKE rasteiro: braço baixo e esticado
+      if (stealRight) { aR_x = -0.55 - 0.75 * reach; eR_x = 0.10; aR_z = -0.30; wR_x = 0.2 * reach; }
+      else { aL_x = -0.55 - 0.75 * reach; eL_x = 0.10; aL_z = 0.30; wL_x = 0.2 * reach; }
+    } else if (sv === 2) {     // VARRIDA lateral da mão
+      if (stealRight) { aR_x = -1.25; aR_z = -0.25 - 0.85 * reach; aR_y = -0.5 * reach; eR_x = 0.35; }
+      else { aL_x = -1.25; aL_z = 0.25 + 0.85 * reach; aL_y = 0.5 * reach; eL_x = 0.35; }
+    } else if (sv === 3) {     // ARMADILHA com as duas mãos
+      aR_x = aL_x = -1.15 - 0.7 * reach; eR_x = eL_x = 0.55 - 0.35 * reach;
+      aR_z = -0.16; aL_z = 0.16; wR_y = 0.2; wL_y = -0.2;
     }
   } else if (isGathering) {
     // SHOOTING POCKET REALISTA: mão direita armada sob a bola (punho em dorsiflexão) e mão esquerda apoiada na lateral como guia
@@ -7736,6 +7988,9 @@ function syncBiomechanics(o, m, dt, t) {
         wR_x = 0.18 * Math.sin(recvPhase * Math.PI);
         wR_y = 0.30;
       }
+      const xv = varOf(o, 'cx', o.cx, CX_DUR, 3);
+      if (xv === 1) { aR_x += 0.22; aL_x += 0.22; eR_x -= 0.12; eL_x -= 0.12; }                       // crossover baixo e rápido
+      else if (xv === 2) { aR_z -= 0.20; aL_z += 0.20; aR_x -= 0.12; aL_x -= 0.12; }                  // crossover largo, braços abertos
     } else if (o.sd > 0) {
       // BETWEEN THE LEGS (POR DEBAIXO DAS PERNAS): mão de origem passa a bola sob a coxa em avanço e a outra recebe atrás do quadril
       const legSweep = Math.sin(Math.PI * sdp);
@@ -7746,6 +8001,7 @@ function syncBiomechanics(o, m, dt, t) {
         aL_x = -0.22 - 0.25 * legSweep; eL_x = 0.62; aL_z = -0.28 * legSweep; wL_x = -0.32 * legSweep; wL_y = -0.35;
         aR_x = 0.12 * legSweep - 0.28;  eR_x = 0.88; aR_z = -0.22;            wR_x = 0.16 * legSweep;  wR_y = 0.28;
       }
+      if (varOf(o, 'sd', o.sd, SD_DUR, 2) === 1) { aR_x -= 0.18 * legSweep; aL_x -= 0.18 * legSweep; aR_z += 0.12 * legSweep; aL_z -= 0.12 * legSweep; }   // entre as pernas com braços mais amplos
     } else if (o.bb > 0) {
       // BEHIND THE BACK (POR TRÁS DAS COSTAS): braço de origem envolve as costas e a mão oposta amortece na lateral
       const backSweep = Math.sin(Math.PI * bbp);
@@ -7757,15 +8013,17 @@ function syncBiomechanics(o, m, dt, t) {
         aR_x = -0.38;            eR_x = 0.96; aR_z = -0.24;             wR_x = 0.14 * backSweep;  wR_y = 0.26;
       }
     } else if (o.sb > 0) {
-      // STEP-BACK: drible forte de impulsão para trás preparando o gather nas duas mãos
-      const sbWave = Math.sin(Math.PI * sbp);
-      if (o.hand > 0) {
-        aR_x = -0.58 - 0.24 * sbWave; eR_x = 1.12; aR_z = -0.10; wR_x = -0.22 * sbWave; wR_y = 0.28;
-        aL_x = -0.68 - 0.20 * sbWave; eL_x = 1.10; aL_z = 0.18;  wL_x = -0.14;          wL_y = -0.34;
-      } else {
-        aL_x = -0.58 - 0.24 * sbWave; eL_x = 1.12; aL_z = 0.10;  wL_x = -0.22 * sbWave; wL_y = -0.28;
-        aR_x = -0.68 - 0.20 * sbWave; eR_x = 1.10; aR_z = -0.18; wR_x = -0.14;          wR_y = 0.34;
-      }
+      // STEP-BACK NBA: mão que dribla primeiro vira braço de proteção estendido; mão nova recebe a bola baixa; no fim as duas sobem ao bolso de arremesso
+      const oldR = (o.prevHand || o.hand) > 0;
+      const rel = smoothstep(cl((sbp - 0.16) / 0.18, 0, 1));
+      const pocket = smoothstep(cl((sbp - 0.62) / 0.22, 0, 1));
+      let oAx = lerp(-0.52, -1.05, rel), oAz = lerp(0.10, 0.74, rel), oE = lerp(1.05, 0.34, rel), oWx = lerp(-0.20, 0.05, rel);
+      let nAx = lerp(-0.88, -0.42, rel), nAz = lerp(0.46, 0.14, rel), nE = lerp(0.95, 1.22, rel), nWx = lerp(-0.10, -0.24, rel);
+      oAx = lerp(oAx, -1.25, pocket); oAz = lerp(oAz, 0.12, pocket); oE = lerp(oE, 1.55, pocket); oWx = lerp(oWx, -0.12, pocket);
+      nAx = lerp(nAx, -1.25, pocket); nAz = lerp(nAz, 0.12, pocket); nE = lerp(nE, 1.55, pocket); nWx = lerp(nWx, -0.12, pocket);
+      if (oldR) { aR_x = oAx; aR_z = -oAz; eR_x = oE; wR_x = oWx; wR_y = 0.26; aL_x = nAx; aL_z = nAz; eL_x = nE; wL_x = nWx; wL_y = -0.30; }
+      else { aL_x = oAx; aL_z = oAz; eL_x = oE; wL_x = oWx; wL_y = -0.26; aR_x = nAx; aR_z = -nAz; eR_x = nE; wR_x = nWx; wR_y = 0.30; }
+      handMode = pocket > 0.3 ? 'ball_cup' : 'dribble';
     } else if (o.spin > 0) {
       // SPIN MOVE: puxa a bola colada à cintura durante o giro de 360° e protege com o braço oposto
       const spWave = Math.sin(Math.PI * spp);
@@ -8055,7 +8313,7 @@ function syncBallWithHandsAndFloor(o, m, dt) {
     m.handR.palmAnchor.getWorldPosition(_v1);
     m.handL.palmAnchor.getWorldPosition(_v2);
 
-    if (o.dunkType === 1) {
+    if (DUNKBASE[o.dunkType | 0] === 1) {
       // Na enterrada de duas mãos, a bola fica encaixada exatamente no centro entre as duas palmas
       _v3.lerpVectors(_v1, _v2, 0.5);
     } else {
@@ -8081,7 +8339,7 @@ function syncBallWithHandsAndFloor(o, m, dt) {
     m.handL.palmAnchor.getWorldPosition(_v2);
     // Transição contínua e sem corte das duas mãos juntas para a mão que finaliza a bandeja (esquerda no Euro Step, direita nas demais)
     const handBlend = smoothstep(cl((lp - 0.22) / 0.18, 0, 1));
-    const targetHandMix = (o.layupType === 1) ? lerp(0.5, 1.0, handBlend) : 0.5 * (1 - handBlend);
+    const targetHandMix = (LAYBASE[o.layupType | 0] === 1) ? lerp(0.5, 1.0, handBlend) : 0.5 * (1 - handBlend);
     _v3.lerpVectors(_v1, _v2, targetHandMix);
     mB.position.copy(_v3);
     B.x = _v3.x / s; B.y = _v3.z / s; B.z = Math.max(0, (_v3.y - 0.12) / s);
@@ -8093,6 +8351,31 @@ function syncBallWithHandsAndFloor(o, m, dt) {
     m.handL.palmAnchor.getWorldPosition(_v2);
     _v3.lerpVectors(_v1, _v2, 0.28);
     mB.position.copy(_v3);
+    B.x = _v3.x / s; B.y = _v3.z / s; B.z = Math.max(0, (_v3.y - 0.12) / s);
+    return;
+  }
+
+  if (o.sb > 0) {
+    const p = 1 - o.sb / SB_DUR;
+    const oldR = (o.prevHand || o.hand) > 0;
+    (oldR ? m.handR : m.handL).palmAnchor.getWorldPosition(_v1);
+    (oldR ? m.handL : m.handR).palmAnchor.getWorldPosition(_v2);
+    const sinY = Math.sin(o.ry), cosY = Math.cos(o.ry), latS = oldR ? 1 : -1;   // +1 = lado esquerdo do jogador (vetor esquerdo = cosY,-sinY)
+    const flX = o.x * s + sinY * 0.12 + cosY * 0.22 * latS, flZ = o.y * s + cosY * 0.12 - sinY * 0.22 * latS;
+    if (p < 0.60) {
+      const sp = smoothstep(cl((p - 0.06) / 0.50, 0, 1));
+      if (sp < 0.5) { const d = sp / 0.5; _v3.x = lerp(_v1.x, flX, d); _v3.z = lerp(_v1.z, flZ, d); _v3.y = lerp(_v1.y, 0.12, d * (0.30 + 0.70 * d)); }
+      else { const u = (sp - 0.5) / 0.5; _v3.x = lerp(flX, _v2.x, u); _v3.z = lerp(flZ, _v2.z, u); _v3.y = lerp(0.12, _v2.y, 1 - (1 - u) * (1 - u)); }
+    } else {                                    // gather: bola sobe para o bolso de arremesso, entre as duas mãos
+      const g = smoothstep(cl((p - 0.60) / 0.30, 0, 1));
+      _v3.lerpVectors(_v2, _v1, 0.5 * g); _v3.y += 0.06 * g;
+    }
+    _v3.x = cl(_v3.x, 10 * s, (W - 10) * s);
+    _v3.z = cl(_v3.z, 10 * s, (H - 10) * s);
+    limitBallStep(dt);
+    mB.position.copy(_v3);
+    B.rotX += dt * 10;
+    ballSquash(_v3.y);
     B.x = _v3.x / s; B.y = _v3.z / s; B.z = Math.max(0, (_v3.y - 0.12) / s);
     return;
   }
@@ -8289,6 +8572,12 @@ function drawVerticalShotMeter(x, y, progress) {
 }
 
 const camPosSmooth = new THREE.Vector3(HX * s, 2.8, (420 + 180) * s);
+let camAct = 0, camShake = 0, camPrevPy = 0, camBallLock = false;
+function toggleCamLock() {                       // câmera fixa na bola (tecla L / botão de câmera no celular)
+  camBallLock = !camBallLock;
+  document.querySelectorAll('.tb-cam').forEach(b => b.classList.toggle('lock', camBallLock));
+  say(camBallLock ? 'CÂMERA FIXA NA BOLA' : 'CÂMERA LIVRE', 1.0, false, true);
+}   // câmera: intensidade de ação (enterrada/bandeja), tremor e altura anterior do jogador
 const camLookSmooth = new THREE.Vector3(HX * s, 1.5, HY * s);
 
 function updateBallTrailAndReboundIndicator(t) {
@@ -8484,17 +8773,54 @@ function render(dt, t) {
       _v1.set(_v2.x + (_faceD.x * fc + _faceD.z * fs) * 0.95, _v2.y + 0.01, _v2.z + (-_faceD.x * fs + _faceD.z * fc) * 0.95);
     }
   } else {
+    if (camBallLock && !isPlayerCelebNow && P.dunk <= 0 && P.layup <= 0) {   // gira a câmera até a bola (mouse tem prioridade por um instante)
+      const mine = B.s === 'held' && B.owner === P;
+      if (!mine && B.s !== 'dead' && performance.now() - lookT > 350) {
+        const bdx = B.x - P.x, bdy = B.y - P.y;
+        if (Math.hypot(bdx, bdy) > 14) {
+          let df = Math.atan2(bdx, bdy) - yaw; df = Math.atan2(Math.sin(df), Math.cos(df));
+          yaw += df * (1 - Math.exp(-5 * dt)); cd.x = Math.sin(yaw); cd.y = Math.cos(yaw);
+        }
+      }
+    }
     const cp = Math.cos(pit), sp2 = Math.sin(pit);
-    const camDist = isPlayerCelebNow ? 3.8 : 6.2;
+    const spd = cl((P.v || 0) / 228, 0, 1.3);                               // velocidade normalizada
+    const dunkP = P.dunk > 0 ? 1 - P.dunk / 0.96 : 0;
+    camAct = damp(camAct, (P.dunk > 0 || P.layup > 0) ? 1 : 0, 5, dt);       // 0..1: câmera "de ação" na enterrada/bandeja
+    const camDist = isPlayerCelebNow ? 3.8 : 6.2 + 0.9 * spd + 0.7 * camAct - (charge ? 0.5 : 0);   // afasta correndo/enterrando, aproxima ao arremessar
     const lookAhead = isPlayerCelebNow ? 0.0 : 2.6;
-    const camBaseY = isPlayerCelebNow ? 1.46 : 1.64;
-    _v1.set(P.x * s - cd.x * camDist * cp, camBaseY + sp2 * (isPlayerCelebNow ? 1.8 : 6.2), P.y * s - cd.y * camDist * cp);
-    _v2.set(P.x * s + cd.x * lookAhead, isPlayerCelebNow ? 1.44 : 1.50, P.y * s + cd.y * lookAhead);
+    const camBaseY = isPlayerCelebNow ? 1.46 : 1.64 + 0.30 * camAct;
+    const shoulder = isPlayerCelebNow ? 0 : 0.38 * (1 - 0.6 * camAct);       // câmera levemente por cima do ombro: mostra mais quadra
+    const rx = -cd.y, rz = cd.x;                                             // vetor "direita" da câmera
+    _v1.set(P.x * s - cd.x * camDist * cp + rx * shoulder, camBaseY + sp2 * (isPlayerCelebNow ? 1.8 : 6.2), P.y * s - cd.y * camDist * cp + rz * shoulder);
+    const vl = Math.hypot(P.vx || 0, P.vy || 0) || 1;                        // olha um pouco à frente na direção do movimento
+    _v2.set(P.x * s + cd.x * lookAhead + (P.vx / vl) * 0.55 * spd + rx * shoulder * 0.5, isPlayerCelebNow ? 1.44 : 1.50 + 0.25 * camAct * dunkP,
+            P.y * s + cd.y * lookAhead + (P.vy / vl) * 0.55 * spd + rz * shoulder * 0.5);
+    if (!isPlayerCelebNow && (camAct > 0.01 || charge)) {                    // enquadra jogador + cesta na enterrada, bandeja e arremesso
+      const hb = Math.max(0.22 * camAct, charge ? 0.10 : 0);
+      _v2.x = lerp(_v2.x, HX * s, hb); _v2.z = lerp(_v2.z, HY * s, hb); _v2.y = lerp(_v2.y, RIM_Y, hb * 0.8);
+    }
+    if (camBallLock && !isPlayerCelebNow && P.dunk <= 0 && P.layup <= 0) {   // mira fixa na bola
+      const bl = (B.s === 'held' && B.owner === P) ? 0.35 : 0.85;
+      _v2.x = lerp(_v2.x, B.x * s, bl); _v2.z = lerp(_v2.z, B.y * s, bl); _v2.y = lerp(_v2.y, 0.12 + B.z * s, bl * 0.8);
+    }
+    // limites: a câmera não atravessa as paredes/arquibancada nem o chão
+    _v1.x = cl(_v1.x, -1.2, W * s + 1.2); _v1.z = cl(_v1.z, -1.2, H * s + 1.2); _v1.y = Math.max(_v1.y, 0.8);
   }
 
-  camPosSmooth.lerp(_v1, 1 - Math.exp(-16 * dt));
-  camLookSmooth.lerp(_v2, 1 - Math.exp(-18 * dt));
+  const camSpd = inStartMenu ? 0 : cl((P.v || 0) / 228, 0, 1.3);
+  camPosSmooth.lerp(_v1, 1 - Math.exp(-(14 + 8 * camSpd) * dt));            // acompanha mais firme quando o jogador corre
+  camLookSmooth.lerp(_v2, 1 - Math.exp(-20 * dt));
   cam.position.copy(camPosSmooth);
+  if (!inStartMenu) {                                                       // TREMOR: cravada, aterrissagem de salto e aro
+    const pyNow = mP.position.y;
+    camShake = Math.max(0, camShake - dt * 3.2);
+    if (P.dunk > 0) { const dp = 1 - P.dunk / 0.96; if (dp > 0.58 && dp < 0.66) camShake = Math.max(camShake, 0.55); }
+    if (camPrevPy > 0.25 && pyNow <= 0.10) camShake = Math.max(camShake, cl(camPrevPy * 0.35, 0.15, 0.40));
+    camPrevPy = pyNow;
+    const sk = camShake + rimShake * 0.25;
+    if (sk > 0.002) { cam.position.x += Math.sin(t * 61) * sk * 0.035; cam.position.y += Math.sin(t * 53 + 1.7) * sk * 0.030; }
+  }
   cam.lookAt(camLookSmooth);
 
   smCtx.clearRect(0, 0, smCanvas.width, smCanvas.height);
