@@ -879,7 +879,8 @@ body.in-menu #home-btn { display: none; }
 .bind-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 6px 14px; }
 /* combos de drible */
 .combo-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 6px 14px; }
-.combo-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 11px; background: rgba(255,255,255,.04); border: 1px solid var(--c-line); }
+.combo-row { --mc: #fff; display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 11px; background: rgba(255,255,255,.04); border: 1px solid var(--c-line); border-left: 4px solid var(--mc); }
+.combo-row .nm b { color: var(--mc); }
 .combo-keys { display: flex; align-items: center; gap: 5px; min-width: 128px; flex: none; }
 .combo-keys kbd {
   min-width: 26px; padding: 4px 7px; border-radius: 7px; text-align: center; font: 700 11.5px var(--font); color: #fff;
@@ -4791,7 +4792,7 @@ const trailMeshes = [];
 for (let i = 0; i < TRAIL_LEN; i++) {
   const tm = new THREE.Mesh(
     new THREE.SphereGeometry(BALL_R * (1 - i / (TRAIL_LEN * 1.25)), 10, 8),
-    new THREE.MeshBasicMaterial({ color: 0x2bb6ff, transparent: true, opacity: 0, depthWrite: false })
+    new THREE.MeshBasicMaterial({ color: 0x2bb6ff, transparent: true, opacity: 0, depthWrite: false, toneMapped: false })   // cor viva no rastro
   );
   sc.add(tm);
   trailMeshes.push(tm);
@@ -6307,11 +6308,12 @@ function tryDef() {
 /* ============================================================================
    8. CONTROLES DE ENTRADA E DRIBLES (ESPAÇO PARA PULAR / ARREMESSAR / SKIP REPLAY)
    ============================================================================ */
-const CX_DUR = 0.46;
-const SD_DUR = 0.50;
-const BB_DUR = 0.52;
-const SB_DUR = 0.52;
-const SPIN_DUR = 0.60;
+// durações dos dribles (~25% mais longas: movimento legível, sem parecer teleporte)
+const CX_DUR = 0.58;
+const SD_DUR = 0.62;
+const BB_DUR = 0.65;
+const SB_DUR = 0.65;
+const SPIN_DUR = 0.75;
 
 const stance = () => B.s === 'held' && B.owner === P && !!K.KeyC;
 
@@ -6481,14 +6483,17 @@ const MOVE_COST = { cx: 8, bb: 9, sb: 10, sd: 8, spin: 11, io: 9, hesi: 7, burst
 const MOVE_OPEN = { cx: 0.9, bb: 0.9, sb: 1.45, sd: 0.85, spin: 1.0, io: 0.8, hesi: 0.9, burst: 1.1, sg: 1.1 };
 const MOVE_NAME = { cx: 'Crossover', bb: 'Entre as pernas', sb: 'Step-back', sd: 'Drible lateral', spin: 'Giro',
   io: 'In-and-out', hesi: 'Hesitação', burst: 'Arranque', sg: 'Shammgod' };
-const MOVE_RATE = { hesi: 0.9, burst: 1.35, sg: 0.85 };            // duração relativa ao drible base
+const MOVE_RATE = { hesi: 0.9, burst: 1.1, sg: 0.9 };              // duração relativa ao drible base
+// cor de cada drible: rastro da bola, anel no chão e nome no HUD (cada cor = um drible)
+const MOVE_COLOR = { cx: '#2bb6ff', bb: '#a78bfa', sb: '#f5b94a', sd: '#dfe6f0', spin: '#2dd4bf',
+  io: '#ff4fd8', hesi: '#b7ff3c', burst: '#ff2e3c', sg: '#ffd23f' };   // arranque em vermelho: laranja sumia no piso
 const MOVE_SHAKE = { io: 1.4, hesi: 1.3, sg: 1.9, burst: 0 };       // quanto tira o passo do marcador
 const MOVE_ANKLE = { io: 0.12, hesi: 0.1, sg: 0.25 };               // finta forte = ankle breaker mais pesado
 const MOVE_NOFLIP = { spin: 1, io: 1, hesi: 1, burst: 1 };          // dribles que terminam com a bola na mesma mão
 const DRIB_GRADE = {
-  perfect: { label: 'PERFEITO',      rate: 1.22, cost: 0.65, open: 0.55, shake: 0.34 },
+  perfect: { label: 'PERFEITO',      rate: 1.10, cost: 0.65, open: 0.55, shake: 0.34 },
   good:    { label: 'BOM',           rate: 1.00, cost: 1.00, open: 1.00, shake: 0.14 },
-  late:    { label: 'FORA DO RITMO', rate: 0.82, cost: 1.30, open: 1.50, shake: 0 }
+  late:    { label: 'FORA DO RITMO', rate: 0.85, cost: 1.30, open: 1.50, shake: 0 }
 };
 const DRIB_PERFECT_S = 0.091, DRIB_GOOD_S = 0.195; // distância (em segundos) até a bola chegar na mão (janelas 30% maiores)
 const CANCEL_AT = 0.6;          // progresso a partir do qual o drible pode ser cancelado pelo próximo
@@ -6637,14 +6642,14 @@ function moveLocomotion(o, dt, fx, fy, ix, iy) {
   if (!tk) return false;
   const kind = activeKind(o);                        // dribles de combo usam a própria curva sobre o timer base
   const p = moveProgress(o, tk), k = moveCurve(kind, p), rate = o.mvRate || 1;
-  let gx, gy, sp, acc = 15;
+  let gx, gy, sp, acc = 10;                          // aceleração suave: o corpo leva um instante para mudar de rumo
   if (kind === 'sb') {
     // para trás = afastando da cesta, com separação lateral para o lado da nova mão
     const bx = o.x - HX, by = o.y - HY, bl = Math.hypot(bx, by) || 1;
     const backX = bx / bl, backY = by / bl, nh = -(o.prevHand || o.hand);
     const latX = -backY * nh, latY = backX * nh;
     gx = -backX * k.fwd + latX * k.lat; gy = -backY * k.fwd + latY * k.lat;
-    sp = 310 * k.spd; acc = p < 0.12 ? 24 : 22;
+    sp = 310 * k.spd; acc = p < 0.12 ? 15 : 13;
   } else {
     const dir = (kind === 'cx' || kind === 'sg') ? (o.xd || -o.hand) : kind === 'bb' ? (o.bdir || -o.hand)
       : (kind === 'sd' || kind === 'io') ? (o.sdir || o.hand) : o.hand;
@@ -6652,9 +6657,11 @@ function moveLocomotion(o, dt, fx, fy, ix, iy) {
     gy = fx * dir * k.lat + fy * k.fwd + iy * 0.35;
     sp = (kind === 'spin' ? 165 : kind === 'sd' ? 150 : kind === 'burst' ? 175 : 155) * k.spd;
   }
-  locomoteEntity(o, gx, gy, sp * rate, dt, acc);
+  // DRIB_SPEED: deslocamento dos dribles ~38% menor; o ritmo (rate) encurta o drible mas só acelera pela raiz
+  locomoteEntity(o, gx, gy, sp * DRIB_SPEED * Math.sqrt(rate), dt, acc);
   return true;
 }
+const DRIB_SPEED = 0.62;
 
 // Termina o drible atual na hora (a troca de mão já está praticamente feita no fim da animação)
 function cancelMove(o, kind) {
@@ -6685,7 +6692,7 @@ function startDribbleMove(o, kind, dir, grade) {
   else if (kind === 'hesi' || kind === 'burst') o.sdir = 0;
   o[tk] = MOVE_TIMER[tk];
   o.mvKind = kind;
-  o.mvRate = g.rate * (1 + 0.06 * chain) * (1 + 0.08 * attrK(o, 'dri')) * (MOVE_RATE[kind] || 1);   // bons dribladores executam mais rápido
+  o.mvRate = g.rate * (1 + 0.03 * chain) * (1 + 0.04 * attrK(o, 'dri')) * (MOVE_RATE[kind] || 1);   // bons dribladores executam um pouco mais rápido
   o.open = MOVE_OPEN[kind] * g.open;
   o.mvGrade = grade; o.lastMove = kind; o.combo = combo; o.comboT = 0;
   o.mvSeq = (o.mvSeq || 0) + 1;                      // o HUD (inclusive do convidado, via snapshot) reage a cada drible novo
@@ -6791,8 +6798,10 @@ const arcPt = deg => { const a = deg * Math.PI / 180; return [ARC_CX + ARC_R * M
 const arcPath = (d0, d1) => { const [x0, y0] = arcPt(d0), [x1, y1] = arcPt(d1); return `M${x0.toFixed(2)} ${y0.toFixed(2)}A${ARC_R} ${ARC_R} 0 0 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`; };
 dribHud.bg.setAttribute('d', arcPath(-ARC_SPAN, ARC_SPAN));
 const _arcR = new THREE.Vector3(), _arcP = new THREE.Vector3();
-function dribPop(el, text, cls) {
-  el.textContent = text;
+function dribPop(el, text, cls, prefix, color) {
+  el.textContent = '';
+  if (prefix) { const sp = document.createElement('span'); sp.textContent = prefix + ' · '; sp.style.color = color || ''; el.append(sp); }   // nome do drible na cor dele
+  el.append(text);
   el.className = cls || '';
   if (typeof anime === 'undefined') { el.style.opacity = 1; setTimeout(() => { el.style.opacity = 0; }, 650); return; }
   anime.remove(el);
@@ -6830,7 +6839,7 @@ function dribHudTick() {
     const fresh = H.seq !== 0 || P.mvSeq === 1;
     H.seq = P.mvSeq || 0;
     if (fresh && P.mvGrade) {
-      dribPop(H.pop, (MOVE_NAME[P.mvKind] ? MOVE_NAME[P.mvKind].toUpperCase() + ' · ' : '') + DRIB_GRADE[P.mvGrade].label, P.mvGrade);   // nome do drible + nota
+      dribPop(H.pop, DRIB_GRADE[P.mvGrade].label, P.mvGrade, MOVE_NAME[P.mvKind] && MOVE_NAME[P.mvKind].toUpperCase(), MOVE_COLOR[P.mvKind]);   // nome do drible (na cor dele) + nota
       if (P.combo > 1) dribPop(H.combo, 'COMBO x' + P.combo + (P.combo >= 4 ? '!' : ''));
     }
   }
@@ -6869,6 +6878,35 @@ function boteHudTick() {
     ankleFx(o);
   }
 }
+// ANEL DO DRIBLE: a cada drible novo (de qualquer jogador) um anel da cor do drible se abre no chão, sob os pés
+const dribRings = [], dribSeen = new WeakMap();
+function dribFxTick() {
+  for (const o of ents()) {
+    const seq = o.mvSeq || 0, last = dribSeen.get(o);
+    dribSeen.set(o, seq);
+    if (last === undefined || seq === last || inStartMenu || !o.mvKind || !MOVE_COLOR[o.mvKind]) continue;
+    let ring = dribRings.find(r => !r.userData.busy);
+    if (!ring && dribRings.length >= 6) {             // todos ocupados: reaproveita o mais antigo
+      ring = dribRings.shift(); dribRings.push(ring);
+      if (ring.userData.anim) ring.userData.anim.pause();
+    }
+    if (!ring) {
+      ring = new THREE.Mesh(new THREE.RingGeometry(0.36, 0.6, 48), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, toneMapped: false }));   // cor sólida: no piso claro o aditivo virava branco
+      ring.rotation.x = -Math.PI / 2; ring.userData.noShadow = true; sc.add(ring); dribRings.push(ring);
+    }
+    ring.userData.busy = true;
+    ring.material.color.set(MOVE_COLOR[o.mvKind]);
+    ring.position.set(o.x * s, 0.025, o.y * s);
+    const strong = o.mvKind === 'sg' || o.mvKind === 'io' || o.mvKind === 'hesi';   // fintas abrem um anel maior
+    const st = { r: 0.5, a: o.mvGrade === 'late' ? 0.5 : 1 };
+    const draw = () => { ring.scale.setScalar(st.r); ring.material.opacity = st.a; };
+    draw();
+    if (typeof anime === 'undefined') { setTimeout(() => { ring.material.opacity = 0; ring.userData.busy = false; }, 450); continue; }
+    ring.userData.anim = anime({ targets: st, r: strong ? 2.1 : 1.6, a: 0, duration: strong ? 620 : 480, easing: 'easeOutExpo', update: draw,
+      complete: () => { ring.material.opacity = 0; ring.userData.busy = false; } });
+  }
+}
+
 let ankleRing = null;
 function ankleFx(o) {
   const V = ANKLE_VARIANTS[o.ankType] || ANKLE_VARIANTS.fall, sev = o.ankType === 'fall' ? 1 : o.ankType === 'catch' ? 0.7 : 0.45;
@@ -9558,7 +9596,10 @@ function toggleCamLock() {                       // câmera fixa na bola (tecla 
 const camLookSmooth = new THREE.Vector3(HX * s, 1.5, HY * s);
 
 function updateBallTrailAndReboundIndicator(t) {
-  const showTrail = B.s === 'flight' || P.dunk > 0 || (B.s === 'loose' && Math.hypot(B.vx, B.vy, B.vz) > 130) || (replayState && replayState.active);
+  // drible em andamento: o rastro da bola ganha a cor do drible
+  const dribOwner = B.s === 'held' && B.owner && activeMove(B.owner) ? B.owner : null;
+  const dribColor = dribOwner ? MOVE_COLOR[activeKind(dribOwner)] : null;
+  const showTrail = B.s === 'flight' || P.dunk > 0 || (B.s === 'loose' && Math.hypot(B.vx, B.vy, B.vz) > 130) || (replayState && replayState.active) || !!dribColor;
   if (showTrail) {
     trailHistory.unshift(mB.position.clone());
     if (trailHistory.length > TRAIL_LEN) trailHistory.pop();
@@ -9566,13 +9607,13 @@ function updateBallTrailAndReboundIndicator(t) {
     trailHistory.pop();
   }
 
-  const trailColor = (B.isGreen || P.dunk > 0) ? 0x22c55e : 0x2bb6ff;
+  const trailColor = dribColor || ((B.isGreen || P.dunk > 0) ? 0x22c55e : 0x2bb6ff);
   for (let i = 0; i < TRAIL_LEN; i++) {
     const tm = trailMeshes[i];
     if (i < trailHistory.length && showTrail) {
       tm.position.copy(trailHistory[i]);
-      tm.material.color.setHex(trailColor);
-      tm.material.opacity = (1 - i / TRAIL_LEN) * 0.35;
+      tm.material.color.set(trailColor);
+      tm.material.opacity = (1 - i / TRAIL_LEN) * (dribColor ? 0.9 : 0.35);
       tm.visible = true;
     } else {
       tm.visible = false;
@@ -9862,6 +9903,7 @@ function loop(now) {
   render(frameDt, now / 1000);
   if (window.fpsTick) window.fpsTick(now);
   dribHudTick();
+  dribFxTick();
   requestAnimationFrame(loop);
 }
 
@@ -11358,7 +11400,8 @@ requestAnimationFrame(loop);
     for (const [seq, name, hint] of COMBO_HELP) {
       const keys = h('span', { class: 'combo-keys' });
       seq.forEach((t, i) => { if (i) keys.append(h('i', null, '→')); keys.append(h('kbd', null, tl[t])); });
-      comboBox.append(h('div', { class: 'combo-row' }, keys, h('div', { class: 'nm' }, h('b', null, name), h('small', null, hint))));
+      const kind = Object.keys(MOVE_NAME).find(k => MOVE_NAME[k] === name), col = MOVE_COLOR[kind] || '#fff';
+      comboBox.append(h('div', { class: 'combo-row', style: '--mc:' + col }, keys, h('div', { class: 'nm' }, h('b', null, name), h('small', null, hint))));   // cor = cor do efeito do drible
     }
   }
   $('cfg-tab-keys').append(
