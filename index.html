@@ -660,44 +660,164 @@ body.mobile, body.mobile canvas { touch-action: none; }
   width: 38px; height: 38px; border-radius: 10px; font-size: 20px; line-height: 1;
   background: rgba(10,2,4,.92); color: #fff; border: 1px solid rgba(255,255,255,.25);
 }
+/* ---------- Modal de configurações (abas, câmera, teclas, gráficos, áudio) ---------- */
 #cfg-panel {
-  position: fixed; z-index: 150; pointer-events: auto; display: none;
-  top: calc(54px + env(safe-area-inset-top, 0px)); left: calc(10px + env(safe-area-inset-left, 0px));
-  width: 310px; max-width: calc(100% - 20px); max-height: calc(100% - 70px); overflow: auto;
-  background: rgba(10,2,4,.96); color: #fff; border: 1px solid rgba(109,0,26,.65);
-  box-shadow: 0 18px 45px rgba(0,0,0,.9);
-  border-radius: 12px; padding: 14px 16px; font-family: 'Figtree', system-ui, sans-serif;
+  position: fixed; inset: 0; z-index: 150; pointer-events: auto; display: none;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,.55); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  font-family: var(--font); color: #fff;
+  --c-acc: #6D001A; --c-acc2: #8f0b27; --c-line: rgba(255,255,255,.14); --c-dim: rgba(255,255,255,.62);
+  --k-move: #2bb6ff; --k-act: #e0475f; --k-cam: #f5b94a; --k-sys: #9b8cff; --k-dbg: #8a94a6;
 }
-#cfg-panel h3 { margin: 0 0 8px; font: 700 22px 'Figtree', system-ui; letter-spacing: 1px; display: flex; justify-content: space-between; align-items: center; }
-#cfg-panel .row { margin-bottom: 12px; }
-#cfg-panel label { display: block; font-size: 12px; font-weight: 700; color: #d88998; letter-spacing: .8px; text-transform: uppercase; margin-bottom: 5px; }
-#cfg-panel .seg { display: flex; gap: 6px; }
-#cfg-panel .seg button, #cfg-panel .act {
-  flex: 1; padding: 8px 4px; border-radius: 8px; cursor: pointer; font: 700 13px 'Figtree', system-ui;
-  background: rgba(255,255,255,.08); color: #fff; border: 1px solid rgba(255,255,255,.18);
-  text-decoration: none; text-align: center; display: inline-block; box-sizing: border-box;
+#cfg-panel.open { display: flex; }
+.cfg-win {
+  width: min(85vw, 1380px); height: min(85vh, 900px); display: flex; flex-direction: column; overflow: hidden;
+  background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.02) 40%, rgba(0,0,0,.55)), rgba(15,2,5,.94);
+  border: 1px solid rgba(255,255,255,.22); border-radius: 22px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.85), inset 0 1px 0 rgba(255,255,255,.3);
 }
-#cfg-panel .seg button.on { background: rgba(109,0,26,.45); border-color: #6D001A; }
-#cfg-panel .act { width: 100%; margin-top: 2px; }
-#cfg-panel input[type=range] { width: 100%; accent-color: #6D001A; }
-#cfg-panel small { display: block; color: rgba(255,255,255,.6); font-size: 11px; margin-top: 4px; }
-.cfg-tabs {
-  display: flex; gap: 6px; margin: 0 0 14px;
-  background: rgba(0, 0, 0, 0.45); padding: 4px;
-  border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.12);
-}
+.cfg-head { display: flex; align-items: center; gap: 14px; padding: 16px 22px; border-bottom: 1px solid var(--c-line); }
+.cfg-head h3 { margin: 0; font: 600 15px var(--font); letter-spacing: .22em; text-transform: uppercase; flex: 1; }
+.cfg-head-hint { font-size: 12px; color: var(--c-dim); }
+.cfg-x { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--c-line); background: rgba(255,255,255,.06); color: #fff; font-size: 15px; cursor: pointer; }
+.cfg-x:hover { background: rgba(109,0,26,.45); }
+.cfg-body { flex: 1; display: flex; min-height: 0; }
+.cfg-nav { width: 230px; flex: none; display: flex; flex-direction: column; gap: 6px; padding: 16px 12px; border-right: 1px solid var(--c-line); background: rgba(0,0,0,.25); }
 .cfg-tab-btn {
-  flex: 1; padding: 7px 6px; border-radius: 7px;
-  border: 1px solid transparent; background: transparent;
-  color: rgba(255, 255, 255, 0.7); font: 700 12px var(--font, 'Figtree', system-ui);
-  letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
-  transition: all 0.15s ease;
+  display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-radius: 12px; text-align: left;
+  border: 1px solid transparent; background: transparent; color: rgba(255,255,255,.72);
+  font: 600 13px var(--font); letter-spacing: .03em; cursor: pointer; transition: background .15s, color .15s;
 }
-.cfg-tab-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
+.cfg-tab-btn svg { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.cfg-tab-btn:hover { color: #fff; background: rgba(255,255,255,.06); }
 .cfg-tab-btn.on {
-  background: linear-gradient(180deg, #8f0b27 0%, #6D001A 60%, #450010 100%);
-  color: #fff; border-color: rgba(255, 255, 255, 0.35);
-  box-shadow: 0 2px 8px rgba(109, 0, 26, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  color: #fff; border-color: rgba(255,255,255,.4);
+  background: linear-gradient(180deg, var(--c-acc2) 0%, var(--c-acc) 55%, #450010 100%);
+  box-shadow: 0 4px 14px rgba(109,0,26,.55), inset 0 1px 0 rgba(255,255,255,.35);
+}
+.cfg-content { flex: 1; overflow-y: auto; padding: 20px 26px 26px; min-width: 0; }
+.cfg-tab-content[hidden] { display: none; }
+.cfg-sec { margin: 0 0 22px; }
+.cfg-sec > h4 { margin: 0 0 10px; font: 600 11px var(--font); letter-spacing: .2em; text-transform: uppercase; color: #e2b4be; }
+.cfg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px 14px; }
+.cfg-row { background: rgba(255,255,255,.04); border: 1px solid var(--c-line); border-radius: 14px; padding: 12px 14px; }
+.cfg-row .lbl { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.cfg-row .lbl b { font: 600 13px var(--font); }
+.cfg-row .lbl em { font-style: normal; font-size: 11px; color: var(--c-dim); white-space: nowrap; }
+.cfg-row small { display: block; color: var(--c-dim); font-size: 11.5px; margin-top: 7px; line-height: 1.35; }
+.cfg-slide { display: flex; align-items: center; gap: 10px; }
+.cfg-slide input[type=range] { flex: 1; accent-color: var(--c-acc2); min-width: 0; }
+.cfg-num { display: flex; align-items: center; gap: 3px; background: rgba(0,0,0,.45); border: 1px solid var(--c-line); border-radius: 8px; padding: 0 7px 0 0; }
+.cfg-num input { width: 58px; background: transparent; border: 0; color: #fff; font: 600 13px var(--font); text-align: right; padding: 6px 2px 6px 6px; outline: none; -moz-appearance: textfield; }
+.cfg-num input::-webkit-inner-spin-button { -webkit-appearance: none; }
+.cfg-num:focus-within { border-color: rgba(255,255,255,.55); }
+.cfg-num span { font-size: 12px; color: var(--c-dim); }
+.cfg-num.bad { border-color: #e0475f; }
+#cfg-panel .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+#cfg-panel .seg button, #cfg-panel .act {
+  flex: 1; padding: 8px 10px; border-radius: 10px; cursor: pointer; font: 600 12.5px var(--font); color: #fff; min-width: 0;
+  background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.18); text-decoration: none; text-align: center;
+}
+#cfg-panel .seg button:hover, #cfg-panel .act:hover { background: rgba(109,0,26,.32); border-color: rgba(255,255,255,.45); }
+#cfg-panel .seg button.on, #cfg-panel .act.primary {
+  background: linear-gradient(180deg, var(--c-acc2) 0%, var(--c-acc) 55%, #450010 100%); border-color: rgba(255,255,255,.55);
+}
+#cfg-panel button:disabled { opacity: .4; cursor: default; }
+#cfg-panel .act.warn { background: rgba(224,71,95,.25); border-color: #e0475f; }
+.cfg-acts { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.cfg-acts .act { display: block; }
+.cfg-foot { display: flex; align-items: center; gap: 14px; padding: 12px 22px; border-top: 1px solid var(--c-line); background: rgba(0,0,0,.3); }
+.cfg-saved { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--c-dim); }
+.cfg-saved i { width: 8px; height: 8px; border-radius: 50%; background: #3ecf8e; }
+.cfg-saved.flash { color: #fff; }
+.cfg-saved.flash i { animation: cfgPulse .9s ease-out; }
+@keyframes cfgPulse { 0% { box-shadow: 0 0 0 0 rgba(62,207,142,.8); } 100% { box-shadow: 0 0 0 10px rgba(62,207,142,0); } }
+.cfg-foot-btns { display: flex; gap: 8px; }
+#cfg-panel .cfg-foot-btns .act { flex: none; padding: 9px 16px; }
+
+/* teclado virtual */
+.kb-wrap { display: flex; gap: 14px; align-items: flex-end; overflow-x: auto; padding: 14px; border-radius: 16px; background: rgba(0,0,0,.4); border: 1px solid var(--c-line); }
+.kb { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 640px; }
+.kb-row { display: flex; gap: 5px; }
+.kb-arrows { display: grid; grid-template-columns: repeat(3, 42px); grid-template-rows: 40px 40px; gap: 5px; flex: none; }
+.kb-arrows .kk:first-child { grid-column: 2; }
+.kk {
+  --kc: rgba(255,255,255,.18);
+  position: relative; flex: 1 1 0; height: 40px; min-width: 0; border-radius: 8px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; padding: 0 3px; overflow: hidden;
+  font: 600 11.5px var(--font); color: rgba(255,255,255,.55); white-space: nowrap;
+  background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.03)); border: 1px solid var(--kc);
+  box-shadow: inset 0 -2px 0 rgba(0,0,0,.4); transition: transform .06s, background .12s;
+}
+.kk:hover { color: #fff; border-color: rgba(255,255,255,.6); }
+.kk.bound { color: #fff; background: linear-gradient(180deg, color-mix(in srgb, var(--kc) 55%, transparent), color-mix(in srgb, var(--kc) 22%, transparent)); }
+.kk.bound::after { content: ''; position: absolute; left: 6px; right: 6px; bottom: 3px; height: 2px; border-radius: 2px; background: var(--kc); }
+.kk.g-move { --kc: var(--k-move); }
+.kk.g-act { --kc: var(--k-act); }
+.kk.g-cam { --kc: var(--k-cam); }
+.kk.g-sys { --kc: var(--k-sys); }
+.kk.g-dbg { --kc: var(--k-dbg); }
+.kk.reserved { color: rgba(255,255,255,.35); background: repeating-linear-gradient(135deg, rgba(255,255,255,.05) 0 5px, transparent 5px 10px); cursor: not-allowed; }
+.kk.down { transform: translateY(2px); box-shadow: none; outline: 2px solid #fff; }
+.kk.sel { outline: 2px solid #fff; outline-offset: 1px; }
+.kb-wrap.listening .kk:not(.reserved) { animation: kbWait 1.2s ease-in-out infinite; }
+@keyframes kbWait { 50% { border-color: rgba(255,255,255,.75); } }
+.kb-info { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 10px 2px 0; font-size: 12.5px; color: var(--c-dim); min-height: 22px; }
+.kb-info b { color: #fff; }
+.kb-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-left: auto; }
+.kb-legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; }
+.kb-legend span::before { content: ''; width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
+
+/* lista de ações */
+.bind-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 6px 14px; }
+.bind-row { display: flex; align-items: center; gap: 10px; padding: 7px 8px 7px 12px; border-radius: 11px; background: rgba(255,255,255,.04); border: 1px solid var(--c-line); }
+.bind-row::before { content: ''; width: 4px; align-self: stretch; border-radius: 3px; background: var(--gc); }
+.bind-row.g-move { --gc: var(--k-move); }
+.bind-row.g-act { --gc: var(--k-act); }
+.bind-row.g-cam { --gc: var(--k-cam); }
+.bind-row.g-sys { --gc: var(--k-sys); }
+.bind-row.g-dbg { --gc: var(--k-dbg); }
+.bind-row .nm { flex: 1; font-size: 13px; min-width: 0; }
+.bind-row .nm small { display: block; margin: 1px 0 0; font-size: 11px; color: var(--c-dim); }
+#cfg-panel .bind-row .kbtn {
+  flex: none; min-width: 96px; padding: 7px 10px; border-radius: 9px; cursor: pointer;
+  font: 700 12px var(--font); letter-spacing: .04em; color: #fff;
+  background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.3); box-shadow: inset 0 -2px 0 rgba(0,0,0,.5);
+}
+#cfg-panel .bind-row .kbtn:hover { border-color: #fff; }
+.bind-row.hl { border-color: rgba(255,255,255,.7); background: rgba(255,255,255,.1); }
+.bind-row.listening { border-color: #fff; background: rgba(109,0,26,.35); }
+#cfg-panel .bind-row.listening .kbtn { animation: kbWait 1s ease-in-out infinite; color: #ffd2a0; }
+.bind-row.flash { animation: bindOk .8s ease-out; }
+@keyframes bindOk { 0% { background: rgba(62,207,142,.35); } 100% { background: rgba(255,255,255,.04); } }
+.cfg-alert {
+  display: none; align-items: center; gap: 12px; flex-wrap: wrap; margin: 12px 0; padding: 11px 14px; border-radius: 12px;
+  background: rgba(224,71,95,.16); border: 1px solid #e0475f; font-size: 13px;
+}
+.cfg-alert.show { display: flex; }
+.cfg-alert.info { background: rgba(43,182,255,.12); border-color: var(--k-move); }
+.cfg-alert p { margin: 0; flex: 1; min-width: 220px; }
+#cfg-panel .cfg-alert .seg { flex: none; }
+
+#fps-counter {
+  position: fixed; z-index: 160; pointer-events: none; right: calc(10px + env(safe-area-inset-right, 0px)); top: calc(10px + env(safe-area-inset-top, 0px));
+  font: 700 12px ui-monospace, Consolas, monospace; color: #3ecf8e; background: rgba(0,0,0,.6); padding: 4px 8px; border-radius: 6px;
+}
+
+@media (max-width: 820px), (max-height: 520px) {
+  .cfg-win { width: 100vw; height: 100dvh; border-radius: 0; }
+  .cfg-body { flex-direction: column; }
+  .cfg-nav { width: auto; flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--c-line); padding: 8px; }
+  .cfg-tab-btn { flex: none; padding: 8px 10px; }
+  .cfg-content { padding: 14px 16px 18px; }
+  .cfg-head { padding: 10px 16px; }
+  .cfg-head-hint { display: none; }
+  .cfg-grid, .bind-list { grid-template-columns: 1fr; }
+  .cfg-foot { padding: 8px 12px; gap: 8px; }
+  .cfg-saved { flex: none; }
+  .cfg-saved span { display: none; }
+  .cfg-foot-btns { flex: 1; justify-content: flex-end; }
+  #cfg-panel .cfg-foot-btns .act { padding: 7px 10px; font-size: 12px; }
 }
 
 /* ---------- Aviso para girar o celular ---------- */
@@ -877,7 +997,7 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
   <div class="replay-bar-bottom">
     <div class="replay-speed-indicator" id="replay-speed">CÂMERA DE TRANSMISSÃO • 1.0X</div>
     <div class="replay-skip-hint">
-      <span id="replay-skip-txt">Pressione <span class="key-badge">ESPAÇO</span> para pular</span>
+      <span id="replay-skip-txt">Pressione <span class="key-badge" data-acts="jump">ESPAÇO</span> para pular</span>
     </div>
   </div>
 </div>
@@ -903,20 +1023,21 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
 
 <!-- CONTROLES -->
 <div class="hud" id="controls-bar">
-  <div class="key-hint"><span class="key-badge">WASD</span> Mover</div>
-  <div class="key-hint"><span class="key-badge">SHIFT</span> Correr / Enterrar</div>
-  <div class="key-hint"><span class="key-badge">ESPAÇO</span> Pular / Toco / Arremessar</div>
-  <div class="key-hint"><span class="key-badge">G</span> Passar (2v2)</div>
-  <div class="key-hint"><span class="key-badge">SEGURAR C</span> Drible (+ WASD)</div>
-  <div class="key-hint"><span class="key-badge">Q</span> Crossover</div>
-  <div class="key-hint"><span class="key-badge">L</span> Câmera na bola</div>
-  <div class="key-hint"><span class="key-badge">F</span> Giro</div>
-  <div class="key-hint"><span class="key-badge">E</span> Roubar / Toco</div>
-  <div class="key-hint"><span class="key-badge">B</span> Esqueleto 3D</div>
-  <div class="key-hint"><span class="key-badge">R</span> Reiniciar</div>
-  <div class="key-hint"><span class="key-badge">M</span> Som</div>
-  <div class="key-hint"><span class="key-badge">N</span> Beat</div>
-  <div class="key-hint"><span class="key-badge">H</span> Ocultar</div>
+  <div class="key-hint"><span class="key-badge" data-acts="moveF,moveL,moveB,moveR">WASD</span> Mover</div>
+  <div class="key-hint"><span class="key-badge" data-acts="sprint">SHIFT</span> Correr / Enterrar</div>
+  <div class="key-hint"><span class="key-badge" data-acts="jump">ESPAÇO</span> Pular / Toco / Arremessar</div>
+  <div class="key-hint"><span class="key-badge" data-acts="pass">G</span> Passar (2v2)</div>
+  <div class="key-hint"><span class="key-badge" data-acts="stance" data-prefix="SEGURAR ">SEGURAR C</span> Drible (+ WASD)</div>
+  <div class="key-hint"><span class="key-badge" data-acts="cross">Q</span> Crossover</div>
+  <div class="key-hint"><span class="key-badge" data-acts="camLock">L</span> Câmera na bola</div>
+  <div class="key-hint"><span class="key-badge" data-acts="spin">F</span> Giro</div>
+  <div class="key-hint"><span class="key-badge" data-acts="steal">E</span> Roubar / Toco</div>
+  <div class="key-hint"><span class="key-badge" data-acts="bones">B</span> Esqueleto 3D</div>
+  <div class="key-hint"><span class="key-badge" data-acts="reset">R</span> Reiniciar</div>
+  <div class="key-hint"><span class="key-badge" data-acts="mute">M</span> Som</div>
+  <div class="key-hint"><span class="key-badge" data-acts="beat">N</span> Beat</div>
+  <div class="key-hint"><span class="key-badge" data-acts="hud">H</span> Ocultar</div>
+  <div class="key-hint"><span class="key-badge" data-acts="settings">P</span> Configurações</div>
   <button id="btn-hide-controls" class="btn-toggle-ctrl" onclick="toggleControls(false)" title="Ocultar barra de controles (H)">✕</button>
 </div>
 <button id="btn-show-controls" class="hud btn-pill-ctrl" onclick="toggleControls(true)" style="display:none;" title="Mostrar controles (H)"><span class="key-badge">H</span> Controles</button>
@@ -936,84 +1057,38 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
 
 <!-- CONFIGURAÇÕES / CONTROLES MOBILE -->
 <button id="cfg-btn" title="Configurações">⚙</button>
-<div id="cfg-panel">
-  <h3><span>Configurações</span><button id="cfg-close" style="background:none;border:0;color:#94a3b8;font-size:18px;cursor:pointer;">✕</button></h3>
-
-  <div class="cfg-tabs">
-    <button class="cfg-tab-btn on" id="btn-tab-game" data-tab="game">Geral</button>
-    <button class="cfg-tab-btn" id="btn-tab-audio" data-tab="audio">Áudio</button>
-  </div>
-
-  <div class="cfg-tab-content" id="cfg-tab-game">
-    <div class="row" id="cfg-row-res">
-      <label>Resolução: <span id="cfg-res-label" style="color:#ffffff">100%</span></label>
-      <input type="range" id="cfg-res" min="20" max="100" step="5" value="100" style="accent-color:#6D001A">
-      <small>Menos resolução = mais desempenho (pixels nítidos, sem borrar).</small>
-    </div>
-    <div class="row" id="cfg-row-fx">
-      <label>Visual (sombras + shader retrô)</label>
-      <div class="seg" id="cfg-fx"><button data-f="1">Ligado</button><button data-f="0">Desligado</button></div>
-      <small>Sombras em tempo real, tone mapping, dither pixelado e vinheta. Desligue se o jogo ficar pesado.</small>
-    </div>
-    <div class="row" id="cfg-row-mb">
-      <label>Motion blur (desfoque de movimento)</label>
-      <div class="seg" id="cfg-mb"><button data-mb="0">Desligado</button><button data-mb="0.45">Baixo</button><button data-mb="0.65">Médio</button><button data-mb="0.8">Alto</button></div>
-      <small>Rastro suave nos movimentos rápidos de câmera, jogadores e bola.</small>
-    </div>
-    <div class="row">
-      <label>Controles</label>
-      <div class="seg" id="cfg-mode">
-        <button data-m="auto">Automático</button>
-        <button data-m="pc">Computador</button>
-        <button data-m="mobile">Celular</button>
+<div id="cfg-panel" role="dialog" aria-modal="true" aria-labelledby="cfg-title">
+  <div class="cfg-win">
+    <header class="cfg-head">
+      <h3 id="cfg-title">Configurações</h3>
+      <span class="cfg-head-hint"><span class="key-badge">ESC</span> fecha</span>
+      <button id="cfg-close" class="cfg-x" aria-label="Fechar configurações">✕</button>
+    </header>
+    <div class="cfg-body">
+      <nav class="cfg-nav" role="tablist">
+        <button class="cfg-tab-btn on" data-tab="cam" role="tab"><svg viewBox="0 0 24 24"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="3.6"/></svg><span>Câmera &amp; Visão</span></button>
+        <button class="cfg-tab-btn" data-tab="keys" role="tab"><svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h1M9 10h1M12 10h1M15 10h1M18 10h0M7 14h10"/></svg><span>Controles &amp; Teclas</span></button>
+        <button class="cfg-tab-btn" data-tab="gfx" role="tab"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg><span>Gráficos &amp; Vídeo</span></button>
+        <button class="cfg-tab-btn" data-tab="aud" role="tab"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg><span>Áudio &amp; Geral</span></button>
+      </nav>
+      <div class="cfg-content">
+        <section class="cfg-tab-content" id="cfg-tab-cam"></section>
+        <section class="cfg-tab-content" id="cfg-tab-keys" hidden></section>
+        <section class="cfg-tab-content" id="cfg-tab-gfx" hidden></section>
+        <section class="cfg-tab-content" id="cfg-tab-aud" hidden></section>
       </div>
-      <small id="cfg-detect"></small>
     </div>
-    <div class="row" id="cfg-row-sens">
-      <label>Sensibilidade da câmera (toque)</label>
-      <input type="range" id="cfg-sens" min="0.5" max="2" step="0.05">
-    </div>
-    <div class="row" id="cfg-row-size">
-      <label>Tamanho dos botões</label>
-      <input type="range" id="cfg-size" min="0.8" max="1.3" step="0.05">
-    </div>
-    <div class="row">
-      <button class="act" id="cfg-full">Tela cheia (horizontal)</button>
-    </div>
-    <div class="row">
-      <a class="act" href="https://open.spotify.com/playlist/5RGljA8YyaKCIfSM0p67E4?si=780caa3be62b4417" target="_blank" rel="noopener noreferrer">♪ Trilha sonora ↗</a>
-    </div>
-    <div class="row">
-      <button class="act" id="cfg-reset">Reiniciar partida</button>
-    </div>
-    <div class="row" style="margin-bottom:0">
-      <button class="act" id="cfg-menu">Voltar ao menu</button>
-    </div>
-  </div>
-
-  <div class="cfg-tab-content" id="cfg-tab-audio" style="display:none">
-    <div class="row" id="cfg-row-vol-ball">
-      <label>Volume da Bola: <span id="cfg-vol-ball-val" style="color:#ffffff">80%</span></label>
-      <input type="range" id="cfg-vol-ball" min="0" max="100" step="5" value="80" style="accent-color:#6D001A">
-      <small>Quique na quadra, impacto na tabela, aro e cesta.</small>
-    </div>
-    <div class="row" id="cfg-row-vol-shoes">
-      <label>Volume do Tênis: <span id="cfg-vol-shoes-val" style="color:#ffffff">60%</span></label>
-      <input type="range" id="cfg-vol-shoes" min="0" max="100" step="5" value="60" style="accent-color:#6D001A">
-      <small>Atrito da borracha no piso e cortes rápidos de direção.</small>
-    </div>
-    <div class="row" id="cfg-row-vol-music">
-      <label>Volume da Música: <span id="cfg-vol-music-val" style="color:#ffffff">70%</span></label>
-      <input type="range" id="cfg-vol-music" min="0" max="100" step="5" value="70" style="accent-color:#6D001A">
-      <small>Beat Boom Bap Lo-Fi instrumental procedural.</small>
-    </div>
-    <div class="row" id="cfg-row-beat">
-      <label>Estado do Beat</label>
-      <div class="seg" id="cfg-beat"><button data-b="1" class="on">Ligado</button><button data-b="0">Desligado</button></div>
-      <small>Ative ou silencie o beat a qualquer momento (tecla N).</small>
-    </div>
+    <footer class="cfg-foot">
+      <span id="cfg-saved" class="cfg-saved"><i></i><span>Alterações salvas automaticamente</span></span>
+      <div class="cfg-foot-btns">
+        <button class="act" id="cfg-reset-tab">Restaurar esta aba</button>
+        <button class="act" id="cfg-reset-all">Restaurar tudo</button>
+        <button class="act primary" id="cfg-done">Concluir</button>
+      </div>
+    </footer>
   </div>
 </div>
+<div id="fps-counter" hidden>-- FPS</div>
 
 <div id="rotate-overlay">
   <div class="ph"></div>
@@ -1041,6 +1116,48 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
 <script>if (typeof Peer === 'undefined') document.write('<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"><\/script>');</script>
 <button id="daynight-btn" aria-label="Alternar dia e noite" title="Modo dia — clique para a noite"><svg class="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.6"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2.2v2.6M12 19.2v2.6M2.2 12h2.6M19.2 12h2.6M5.1 5.1l1.8 1.8M17.1 17.1l1.8 1.8M5.1 18.9l1.8-1.8M17.1 6.9l1.8-1.8"/></g></svg><svg class="moon" viewBox="0 0 24 24"><path d="M20.3 14.6A8.6 8.6 0 0 1 9.4 3.7a.6.6 0 0 0-.8-.7A9.6 9.6 0 1 0 21 15.4a.6.6 0 0 0-.7-.8z"/></svg></button>
 <div id="vhs-osd"><span class="rec">&#9654;</span> PLAY<small>SP &nbsp;<span id="vhs-cnt">0:00:00</span></small><small>V = VHS ON/OFF</small></div>
+<script>
+/* ============================================================================
+   CONFIGURAÇÕES PERSISTIDAS (câmera, gráficos, áudio, teclas)
+   Carregadas antes do jogo: o motor lê GSET a cada quadro. A interface fica no fim do arquivo.
+   ============================================================================ */
+const GSET_KEY = 'aerohoop_settings_v3';
+const GSET_DEF = {
+  cam:  { fov: 90, dist: 6, height: 0, sensX: 1, sensY: 1, invertY: false, smooth: 50 },
+  gfx:  { preset: 'medio', fpsCap: 0, vsync: true, shadows: 'media', post: true, retro: true, showFps: false },
+  aud:  { master: 1, sfx: 1 },
+  keys: {}
+};
+// limites rígidos: aplicados na interface E na lógica (valores vindos do localStorage também passam por aqui)
+const GSET_LIM = {
+  fov:    { min: 60,   max: 120, step: 1 },
+  dist:   { min: 2,    max: 15,  step: 0.5 },
+  height: { min: -2,   max: 5,   step: 0.1 },
+  sensX:  { min: 0.1,  max: 3,   step: 0.05 },
+  sensY:  { min: 0.1,  max: 3,   step: 0.05 },
+  smooth: { min: 0,    max: 100, step: 1 }
+};
+function clampSetting(name, v) {
+  const L = GSET_LIM[name];
+  v = Number(v);
+  if (!isFinite(v)) v = GSET_DEF.cam[name];
+  v = Math.min(L.max, Math.max(L.min, v));
+  return +(Math.round(v / L.step) * L.step).toFixed(3);
+}
+const GSET = JSON.parse(JSON.stringify(GSET_DEF));
+GSET.loaded = false;
+try {
+  const sv = JSON.parse(localStorage.getItem(GSET_KEY) || 'null');
+  if (sv && typeof sv === 'object') {
+    for (const g of ['cam', 'gfx', 'aud', 'keys']) if (sv[g] && typeof sv[g] === 'object') Object.assign(GSET[g], sv[g]);
+    GSET.loaded = true;
+  }
+} catch (e) {}
+for (const k in GSET_LIM) GSET.cam[k] = clampSetting(k, GSET.cam[k]);
+function saveGSET() {
+  try { localStorage.setItem(GSET_KEY, JSON.stringify({ cam: GSET.cam, gfx: GSET.gfx, aud: GSET.aud, keys: GSET.keys })); } catch (e) {}
+}
+</script>
 <script>
 (function(){
   const box = document.createElement('div');
@@ -1132,17 +1249,22 @@ class BasketballAudio {
       if (!AudioCtx) return null;
       this.ctx = new AudioCtx();
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.setValueAtTime(0.85, this.ctx.currentTime);
+      this.masterGain.gain.setValueAtTime(0.85 * GSET.aud.master, this.ctx.currentTime);
       this.masterGain.connect(this.ctx.destination);
+
+      // Barramento de efeitos (bola, tênis, apito, buzina): volume de SFX
+      this.sfxGain = this.ctx.createGain();
+      this.sfxGain.gain.setValueAtTime(GSET.aud.sfx, this.ctx.currentTime);
+      this.sfxGain.connect(this.masterGain);
 
       // Sub-barramentos de mixagem dedicados
       this.ballGain = this.ctx.createGain();
       this.ballGain.gain.setValueAtTime(this.volBall, this.ctx.currentTime);
-      this.ballGain.connect(this.masterGain);
+      this.ballGain.connect(this.sfxGain);
 
       this.shoesGain = this.ctx.createGain();
       this.shoesGain.gain.setValueAtTime(this.volShoes, this.ctx.currentTime);
-      this.shoesGain.connect(this.masterGain);
+      this.shoesGain.connect(this.sfxGain);
 
       this.beatGain = this.ctx.createGain();
       this.beatGain.gain.setValueAtTime(this.volMusic * 0.44, this.ctx.currentTime);
@@ -1152,6 +1274,16 @@ class BasketballAudio {
       this.ctx.resume().catch(() => {});
     }
     return this.ctx;
+  }
+
+  setMasterVolume(v) {
+    GSET.aud.master = Math.max(0, Math.min(1, v)); saveGSET();
+    if (this.masterGain && this.ctx) this.masterGain.gain.setValueAtTime(0.85 * GSET.aud.master, this.ctx.currentTime);
+  }
+
+  setSfxVolume(v) {
+    GSET.aud.sfx = Math.max(0, Math.min(1, v)); saveGSET();
+    if (this.sfxGain && this.ctx) this.sfxGain.gain.setValueAtTime(GSET.aud.sfx, this.ctx.currentTime);
   }
 
   setBallVolume(v) {
@@ -1811,7 +1943,7 @@ class BasketballAudio {
     osc1.connect(buzzFilter);
     osc2.connect(buzzFilter);
     buzzFilter.connect(buzzGain);
-    buzzGain.connect(this.masterGain);
+    buzzGain.connect(this.sfxGain || this.masterGain);
 
     osc1.start(t);
     osc1.stop(t + buzzerDur);
@@ -1837,7 +1969,7 @@ class BasketballAudio {
       nGain.gain.exponentialRampToValueAtTime(0.001, noteTime + noteDur);
 
       nOsc.connect(nGain);
-      nGain.connect(this.masterGain);
+      nGain.connect(this.sfxGain || this.masterGain);
 
       nOsc.start(noteTime);
       nOsc.stop(noteTime + noteDur);
@@ -1897,7 +2029,7 @@ class BasketballAudio {
     mainGain.gain.exponentialRampToValueAtTime(0.001, t + duration);
 
     carrier.connect(mainGain);
-    mainGain.connect(this.masterGain);
+    mainGain.connect(this.sfxGain || this.masterGain);
 
     lfo.start(t);
     lfo.stop(t + duration);
@@ -2187,12 +2319,13 @@ function updateSunFocus(x, z) {
   sun.position.set(_sp.x + 9, 25, _sp.z + 18);
 }
 
+const SHADOW_SIZES = { off: 0, baixa: 512, media: 1024, alta: 2048 };
 function setFX(on) {
-  window.fxEnabled = !!on;
-  rd.shadowMap.enabled = !!on;
+  window.fxEnabled = !!on;   // pós-processamento (tone mapping, dither, vinheta); as sombras têm ajuste próprio
   const touch = document.body.classList.contains('mobile');
-  const ms = touch ? 512 : 1024;
-  if (sun.shadow.mapSize.x !== ms) {
+  const ms = Math.min(SHADOW_SIZES[GSET.gfx.shadows] ?? 1024, touch ? 1024 : 2048);
+  rd.shadowMap.enabled = ms > 0;
+  if (ms > 0 && sun.shadow.mapSize.x !== ms) {
     sun.shadow.mapSize.set(ms, ms);
     if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
   }
@@ -4615,8 +4748,8 @@ function rpUpdateSkipTxt() {
   const el = $('replay-skip-txt'); if (!el) return;
   const n = (rpSkip.me ? 1 : 0) + (rpSkip.other ? 1 : 0);
   el.innerHTML = NET.live
-    ? 'Pressione <span class="key-badge">ESPAÇO</span> para pular — <b>' + n + '/2</b>' + (rpSkip.me ? ' (aguardando o outro jogador)' : '')
-    : 'Pressione <span class="key-badge">ESPAÇO</span> para pular';
+    ? 'Pressione <span class="key-badge">' + (window.keyLabel ? keyLabel('jump') : 'ESPAÇO') + '</span> para pular — <b>' + n + '/2</b>' + (rpSkip.me ? ' (aguardando o outro jogador)' : '')
+    : 'Pressione <span class="key-badge">' + (window.keyLabel ? keyLabel('jump') : 'ESPAÇO') + '</span> para pular';
 }
 function rpBroadcast() { if (NET.role === 'host' && NET.live) netSend({ t: 'rk', h: rpSkip.me, g: rpSkip.other }); }
 function endReplayNet() {                    // só o anfitrião encerra; o convidado obedece à mensagem 'rs'
@@ -5284,7 +5417,7 @@ function startSinglePlayerGame() {
   const ss = $('start-screen');
   if (ss) ss.classList.add('hidden');
   const cp = $('cfg-panel');
-  if (cp) cp.style.display = 'none';
+  if (cp && window.closeSettings) closeSettings();
   if (NET.role === 'guest') resetLocal(); else reset();
   if (typeof audio !== 'undefined') {
     audio.reset();
@@ -5304,7 +5437,7 @@ function openStartMenu() {
   const ss = $('start-screen');
   if (ss) ss.classList.remove('hidden');
   const cp = $('cfg-panel');
-  if (cp) cp.style.display = 'none';
+  if (cp && window.closeSettings) closeSettings();
   $('ov').style.display = 'none';
   if (document.pointerLockElement) {
     try { document.exitPointerLock(); } catch (e) {}
@@ -5883,8 +6016,8 @@ addEventListener('mousedown', () => drag = true);
 addEventListener('mouseup', () => drag = false);
 addEventListener('mousemove', e => {
   if (document.pointerLockElement === cvs || drag) {
-    yaw -= e.movementX * 0.0026;
-    pit = cl(pit + e.movementY * 0.002, -0.06, 0.82);
+    yaw -= e.movementX * 0.0026 * GSET.cam.sensX;
+    pit = cl(pit + e.movementY * 0.002 * GSET.cam.sensY * (GSET.cam.invertY ? -1 : 1), -0.06, 0.82);
     lookT = performance.now();
   }
 });
@@ -8740,7 +8873,9 @@ function render(dt, t) {
   }
 
   const isPlayerCelebNow = P.celeb > 0 && P.lock <= 0.18;
-  const targetFov = inStartMenu ? 50 : (P.dunk > 0 ? 65 : (isPlayerCelebNow ? 48 : (charge ? 55 : (P.state === STATES.SPRINT ? 62 : 58))));
+  // FOV do jogador: horizontal em 16:9 (90° ≈ 58.7° vertical, o enquadramento original); os efeitos de corrida/enterrada escalam a partir dele
+  const userVFov = 2 * Math.atan(Math.tan(clampSetting('fov', GSET.cam.fov) * Math.PI / 360) / (16 / 9)) * 180 / Math.PI;
+  const targetFov = inStartMenu ? 50 : userVFov / 58 * (P.dunk > 0 ? 65 : (isPlayerCelebNow ? 48 : (charge ? 55 : (P.state === STATES.SPRINT ? 62 : 58))));
   if (Math.abs(cam.fov - targetFov) > 0.05) {
     cam.fov = damp(cam.fov, targetFov, 8, dt);
     cam.updateProjectionMatrix();
@@ -8787,7 +8922,8 @@ function render(dt, t) {
     const spd = cl((P.v || 0) / 228, 0, 1.3);                               // velocidade normalizada
     const dunkP = P.dunk > 0 ? 1 - P.dunk / 0.96 : 0;
     camAct = damp(camAct, (P.dunk > 0 || P.layup > 0) ? 1 : 0, 5, dt);       // 0..1: câmera "de ação" na enterrada/bandeja
-    const camDist = isPlayerCelebNow ? 3.8 : 6.2 + 0.9 * spd + 0.7 * camAct - (charge ? 0.5 : 0);   // afasta correndo/enterrando, aproxima ao arremessar
+    const camDist = (isPlayerCelebNow ? 3.8 : 6.2 + 0.9 * spd + 0.7 * camAct - (charge ? 0.5 : 0))   // afasta correndo/enterrando, aproxima ao arremessar
+                    * clampSetting('dist', GSET.cam.dist) / GSET_DEF.cam.dist;                     // distância escolhida nas configurações
     const lookAhead = isPlayerCelebNow ? 0.0 : 2.6;
     const camBaseY = isPlayerCelebNow ? 1.46 : 1.64 + 0.30 * camAct;
     const shoulder = isPlayerCelebNow ? 0 : 0.38 * (1 - 0.6 * camAct);       // câmera levemente por cima do ombro: mostra mais quadra
@@ -8804,13 +8940,15 @@ function render(dt, t) {
       const bl = (B.s === 'held' && B.owner === P) ? 0.35 : 0.85;
       _v2.x = lerp(_v2.x, B.x * s, bl); _v2.z = lerp(_v2.z, B.y * s, bl); _v2.y = lerp(_v2.y, 0.12 + B.z * s, bl * 0.8);
     }
+    _v1.y += clampSetting('height', GSET.cam.height);                        // altura extra escolhida nas configurações
     // limites: a câmera não atravessa as paredes/arquibancada nem o chão
     _v1.x = cl(_v1.x, -1.2, W * s + 1.2); _v1.z = cl(_v1.z, -1.2, H * s + 1.2); _v1.y = Math.max(_v1.y, 0.8);
   }
 
   const camSpd = inStartMenu ? 0 : cl((P.v || 0) / 228, 0, 1.3);
-  camPosSmooth.lerp(_v1, 1 - Math.exp(-(14 + 8 * camSpd) * dt));            // acompanha mais firme quando o jogador corre
-  camLookSmooth.lerp(_v2, 1 - Math.exp(-20 * dt));
+  const camSm = inStartMenu ? 1 : Math.pow(2, (50 - clampSetting('smooth', GSET.cam.smooth)) / 25);   // suavização: 0% = 4x mais firme, 100% = 4x mais suave
+  camPosSmooth.lerp(_v1, 1 - Math.exp(-(14 + 8 * camSpd) * camSm * dt));    // acompanha mais firme quando o jogador corre
+  camLookSmooth.lerp(_v2, 1 - Math.exp(-20 * camSm * dt));
   cam.position.copy(camPosSmooth);
   if (!inStartMenu) {                                                       // TREMOR: cravada, aterrissagem de salto e aro
     const pyNow = mP.position.y;
@@ -8844,6 +8982,8 @@ let accumulator = 0;
 
 const _ad = { sum: 0, n: 0, max: null };
 function loop(now) {
+  // LIMITE DE FPS: pula o quadro se ainda não passou o intervalo mínimo (1 ms de folga para não perder o vsync)
+  if (GSET.gfx.fpsCap > 0 && now - lastTime < 1000 / GSET.gfx.fpsCap - 1) { requestAnimationFrame(loop); return; }
   const rawDt = (now - lastTime) / 1000;
   const frameDt = Math.min(0.05, rawDt);
   lastTime = now;
@@ -8872,6 +9012,7 @@ function loop(now) {
   }
 
   render(frameDt, now / 1000);
+  if (window.fpsTick) window.fpsTick(now);
   requestAnimationFrame(loop);
 }
 
@@ -9977,10 +10118,9 @@ requestAnimationFrame(loop);
     body.classList.toggle('mobile', mob);
     if (!mob) releaseAll();
     ui.style.setProperty('--ts', cfg.size);
-    $('cfg-row-sens').style.display = mob ? '' : 'none';
-    $('cfg-row-size').style.display = mob ? '' : 'none';
-    document.querySelectorAll('#cfg-mode button').forEach(b => b.classList.toggle('on', b.dataset.m === cfg.mode));
-    $('cfg-detect').textContent = 'Detectado: ' + (isTouchDevice() ? 'dispositivo de toque' : 'computador') +
+    document.querySelectorAll('.cfg-mob-only').forEach(el => el.style.display = mob ? '' : 'none');
+    document.querySelectorAll('#cfg-mode button').forEach(b => b.classList.toggle('on', b.dataset.v === cfg.mode));
+    if ($('cfg-detect')) $('cfg-detect').textContent = 'Detectado: ' + (isTouchDevice() ? 'dispositivo de toque' : 'computador') +
       ' • Em uso: ' + (mob ? 'celular (toque)' : 'computador (teclado/mouse)');
     const wb = $('wbtn');
     if (wb) wb.textContent = mob ? '👕' : 'Roupas · U';
@@ -9990,7 +10130,7 @@ requestAnimationFrame(loop);
     if (typeof fit === 'function') fit();
   }
 
-  /* ---- painel de configurações e resolução (exclusivamente nas configurações) ---- */
+  /* ---- ajustes do dispositivo: o modal com abas (bloco CONFIGURAÇÕES abaixo) usa window.MCFG ---- */
   const panel = $('cfg-panel'), cbtn = $('cfg-btn');
   const stop = e => e.stopPropagation();
   for (const el of [panel, cbtn, $('rotate-overlay'), $('start-screen')].filter(Boolean))
@@ -9999,90 +10139,30 @@ requestAnimationFrame(loop);
 
   const applyRes = (val) => {
     cfg.res = cl(Math.round(val / 5) * 5, 20, 100);
-    if ($('cfg-res')) $('cfg-res').value = cfg.res;
-    if ($('cfg-res-label')) $('cfg-res-label').textContent = cfg.res + '%';
+    _ad.max = null;   // a resolução adaptativa passa a respeitar o novo teto escolhido
     if (typeof setResolutionQuality === 'function') setResolutionQuality(cfg.res / 100);
     save();
   };
-  if ($('cfg-res')) $('cfg-res').oninput = e => applyRes(+e.target.value);
   applyRes(cfg.res);
-  const applyFx = () => {
-    document.querySelectorAll('#cfg-fx button').forEach(b => b.classList.toggle('on', (b.dataset.f === '1') === !!cfg.fx));
-    if (typeof setFX === 'function') setFX(cfg.fx);
-  };
-  document.querySelectorAll('#cfg-fx button').forEach(b => b.onclick = () => { cfg.fx = b.dataset.f === '1'; save(); applyFx(); });
-  applyFx();
-  const applyMb = () => {
-    cfg.mb = cl(Number(cfg.mb) || 0, 0, 0.9);
-    document.querySelectorAll('#cfg-mb button').forEach(b => b.classList.toggle('on', Math.abs(+b.dataset.mb - cfg.mb) < 0.01));
+  const applyMb = (v) => {
+    cfg.mb = cl(Number(v) || 0, 0, 0.9);
     if (typeof setMotionBlur === 'function') setMotionBlur(cfg.mb);
+    save();
   };
-  document.querySelectorAll('#cfg-mb button').forEach(b => b.onclick = () => { cfg.mb = +b.dataset.mb; save(); applyMb(); });
-  applyMb();
-  const applyBeat = () => {
-    const isBeatOn = typeof audio !== 'undefined' ? audio.beatEnabled : (localStorage.getItem('sh_beat') !== '0');
-    document.querySelectorAll('#cfg-beat button').forEach(b => b.classList.toggle('on', (b.dataset.b === '1') === isBeatOn));
-  };
-  document.querySelectorAll('#cfg-beat button').forEach(b => b.onclick = () => {
-    const on = b.dataset.b === '1';
-    if (typeof audio !== 'undefined') audio.setBeatEnabled(on);
-    applyBeat();
-  });
-  applyBeat();
-
-  // Alternância de Abas nas Configurações (Geral / Áudio)
-  const tabGameBtn = $('btn-tab-game'), tabAudioBtn = $('btn-tab-audio');
-  const tabGameContent = $('cfg-tab-game'), tabAudioContent = $('cfg-tab-audio');
-  const setCfgTab = (which) => {
-    if (tabGameBtn) tabGameBtn.classList.toggle('on', which === 'game');
-    if (tabAudioBtn) tabAudioBtn.classList.toggle('on', which === 'audio');
-    if (tabGameContent) tabGameContent.style.display = which === 'game' ? 'block' : 'none';
-    if (tabAudioContent) tabAudioContent.style.display = which === 'audio' ? 'block' : 'none';
-  };
-  if (tabGameBtn) tabGameBtn.onclick = () => setCfgTab('game');
-  if (tabAudioBtn) tabAudioBtn.onclick = () => setCfgTab('audio');
-
-  // Sliders de Volume Independentes (Bola, Tênis, Música)
-  const syncVolSlider = (slId, valId, getVal, setVal) => {
-    const sl = $(slId), valEl = $(valId);
-    if (!sl || !valEl) return;
-    const initial = Math.round(getVal() * 100);
-    sl.value = initial;
-    valEl.textContent = initial + '%';
-    sl.oninput = e => {
-      const v = parseInt(e.target.value, 10);
-      valEl.textContent = v + '%';
-      setVal(v / 100);
-    };
-  };
-
-  if (typeof audio !== 'undefined') {
-    syncVolSlider('cfg-vol-ball', 'cfg-vol-ball-val', () => audio.volBall, v => audio.setBallVolume(v));
-    syncVolSlider('cfg-vol-shoes', 'cfg-vol-shoes-val', () => audio.volShoes, v => audio.setShoesVolume(v));
-    syncVolSlider('cfg-vol-music', 'cfg-vol-music-val', () => audio.volMusic, v => audio.setMusicVolume(v));
-  }
-  const toggleCfgPanel = () => {
-    const o = panel.style.display !== 'block';
-    panel.style.display = o ? 'block' : 'none';
-    if (o && document.pointerLockElement) document.exitPointerLock();
-  };
-  cbtn.onclick = toggleCfgPanel;
-  if ($('btn-start-settings')) $('btn-start-settings').onclick = toggleCfgPanel;
-  if ($('cfg-close')) $('cfg-close').onclick = () => { panel.style.display = 'none'; };
-  if ($('cfg-menu')) $('cfg-menu').onclick = () => { panel.style.display = 'none'; openStartMenu(); };
-  document.querySelectorAll('#cfg-mode button').forEach(b => b.onclick = () => { cfg.mode = b.dataset.m; save(); applyMode(); });
-  $('cfg-sens').value = cfg.sens;
-  $('cfg-size').value = cfg.size;
-  $('cfg-sens').oninput = e => { cfg.sens = +e.target.value; save(); };
-  $('cfg-size').oninput = e => { cfg.size = +e.target.value; save(); ui.style.setProperty('--ts', cfg.size); };
-  $('cfg-reset').onclick = () => { panel.style.display = 'none'; reset(); };
+  applyMb(cfg.mb);
 
   async function goFull() {
     try { if (!document.fullscreenElement && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); } catch (e) {}
     try { if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape'); } catch (e) {}
   }
-  $('cfg-full').onclick = goFull;
   $('rot-full').onclick = goFull;
+
+  window.MCFG = {
+    cfg, applyMode, applyRes, applyMb, goFull, isTouchDevice,
+    setMode: m => { cfg.mode = m; save(); applyMode(); },
+    setSens: v => { cfg.sens = cl(+v || 1, 0.5, 2); save(); },
+    setSize: v => { cfg.size = cl(+v || 1, 0.8, 1.3); save(); ui.style.setProperty('--ts', cfg.size); }
+  };
 
   /* ---- botões de ação (segurar = tecla pressionada) ---- */
   ui.querySelectorAll('.tbtn').forEach(btn => {
@@ -10129,8 +10209,8 @@ requestAnimationFrame(loop);
     if (e.pointerId !== lookId) return;
     const dx = e.clientX - lx, dy = e.clientY - ly;
     lx = e.clientX; ly = e.clientY;
-    yaw -= dx * 0.0052 * cfg.sens;
-    pit = cl(pit + dy * 0.0038 * cfg.sens, -0.06, 0.82);
+    yaw -= dx * 0.0052 * cfg.sens * GSET.cam.sensX;
+    pit = cl(pit + dy * 0.0038 * cfg.sens * GSET.cam.sensY * (GSET.cam.invertY ? -1 : 1), -0.06, 0.82);
     lookT = performance.now();
   });
   for (const ev of ['pointerup', 'pointercancel']) cvs.addEventListener(ev, e => { if (e.pointerId === lookId) lookId = null; });
@@ -10149,6 +10229,523 @@ requestAnimationFrame(loop);
 
   applyMode();
 })();
+
+/* ============================================================================
+   CONFIGURAÇÕES: modal com abas (Câmera, Controles/Teclas, Gráficos, Áudio/Geral)
+   As teclas são remapeadas numa camada própria: a tecla física vira o código "lógico"
+   que o jogo já entende, então nenhuma lógica de jogo precisou mudar.
+   ============================================================================ */
+(function () {
+  const panel = $('cfg-panel'), M = window.MCFG;
+
+  /* ---------- ações e teclas ---------- */
+  // def = código lógico lido pelo jogo (e enviado ao anfitrião no online)
+  const ACTIONS = [
+    { id: 'moveF',    g: 'move', name: 'Mover para frente',          def: 'KeyW' },
+    { id: 'moveB',    g: 'move', name: 'Mover para trás',            def: 'KeyS' },
+    { id: 'moveL',    g: 'move', name: 'Mover para a esquerda',      def: 'KeyA' },
+    { id: 'moveR',    g: 'move', name: 'Mover para a direita',       def: 'KeyD' },
+    { id: 'moveF2',   g: 'move', name: 'Frente (alternativa)',       def: 'ArrowUp' },
+    { id: 'moveB2',   g: 'move', name: 'Trás (alternativa)',         def: 'ArrowDown' },
+    { id: 'moveL2',   g: 'move', name: 'Esquerda (alternativa)',     def: 'ArrowLeft' },
+    { id: 'moveR2',   g: 'move', name: 'Direita (alternativa)',      def: 'ArrowRight' },
+    { id: 'sprint',   g: 'move', name: 'Correr / Enterrar',          def: 'ShiftLeft', hint: 'Com a bola, perto da cesta + pulo: enterrada ou bandeja' },
+    { id: 'sprint2',  g: 'move', name: 'Correr (alternativa)',       def: 'ShiftRight' },
+    { id: 'jump',     g: 'act',  name: 'Pular / Arremessar / Toco',  def: 'Space', hint: 'Segure para carregar o arremesso; também pula o replay' },
+    { id: 'steal',    g: 'act',  name: 'Roubar a bola',              def: 'KeyE' },
+    { id: 'pass',     g: 'act',  name: 'Passar (2v2)',               def: 'KeyG' },
+    { id: 'stance',   g: 'act',  name: 'Postura de drible / defesa', def: 'KeyC', hint: 'Segure + direção para driblar' },
+    { id: 'cross',    g: 'act',  name: 'Crossover',                  def: 'KeyQ' },
+    { id: 'spin',     g: 'act',  name: 'Giro',                       def: 'KeyF' },
+    { id: 'camLock',  g: 'cam',  name: 'Câmera fixa na bola',        def: 'KeyL' },
+    { id: 'settings', g: 'sys',  name: 'Abrir configurações',        def: 'KeyP' },
+    { id: 'reset',    g: 'sys',  name: 'Reiniciar partida',          def: 'KeyR' },
+    { id: 'wardrobe', g: 'sys',  name: 'Roupas (no menu inicial)',   def: 'KeyU' },
+    { id: 'hud',      g: 'sys',  name: 'Mostrar/ocultar controles',  def: 'KeyH' },
+    { id: 'mute',     g: 'sys',  name: 'Som liga/desliga',           def: 'KeyM' },
+    { id: 'beat',     g: 'sys',  name: 'Beat liga/desliga',          def: 'KeyN' },
+    { id: 'vhs',      g: 'sys',  name: 'Filtro VHS',                 def: 'KeyV' },
+    { id: 'bones',    g: 'dbg',  name: 'Esqueleto 3D',               def: 'KeyB' },
+    { id: 'shirt',    g: 'dbg',  name: 'Mostrar/ocultar camisa',     def: 'KeyT' }
+  ];
+  const GROUPS = { move: 'Movimento', act: 'Ações de jogo', cam: 'Câmera', sys: 'Sistema e interface', dbg: 'Depuração' };
+  const RESERVED = {
+    Escape: 'fecha este menu', Tab: 'navegação do navegador', MetaLeft: 'tecla do sistema', MetaRight: 'tecla do sistema',
+    ContextMenu: 'tecla do sistema', F5: 'recarrega a página', F11: 'tela cheia do navegador', F12: 'ferramentas do navegador', PrintScreen: 'tecla do sistema'
+  };
+  const ACT = Object.fromEntries(ACTIONS.map(a => [a.id, a]));
+  const DEF_CODES = new Set(ACTIONS.map(a => a.def));
+  const defaultKeys = () => Object.fromEntries(ACTIONS.map(a => [a.id, a.def]));
+
+  // garante: toda ação tem tecla válida ou nenhuma (''), e nunca duas ações na mesma tecla
+  function sanitizeKeys() {
+    const used = new Set(), k = GSET.keys;
+    for (const a of ACTIONS) {
+      const c = k[a.id];
+      if (typeof c === 'string' && c && !RESERVED[c] && !used.has(c)) used.add(c); else k[a.id] = null;
+    }
+    for (const a of ACTIONS) if (k[a.id] === null) { k[a.id] = used.has(a.def) ? '' : a.def; if (k[a.id]) used.add(a.def); }
+    for (const id in k) if (!ACT[id]) delete k[id];
+  }
+  let codeToAct = {};
+  function rebuildMap() { codeToAct = {}; for (const a of ACTIONS) if (GSET.keys[a.id]) codeToAct[GSET.keys[a.id]] = a.id; }
+  sanitizeKeys(); rebuildMap();
+
+  const KEY_NAMES = {
+    Space: 'ESPAÇO', ShiftLeft: 'SHIFT ESQ', ShiftRight: 'SHIFT DIR', ControlLeft: 'CTRL ESQ', ControlRight: 'CTRL DIR',
+    AltLeft: 'ALT', AltRight: 'ALT GR', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Enter: 'ENTER',
+    Backspace: '⌫', Tab: 'TAB', CapsLock: 'CAPS', Escape: 'ESC', MetaLeft: 'WIN', MetaRight: 'WIN', ContextMenu: 'MENU',
+    Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Semicolon: ';', Quote: "'",
+    Comma: ',', Period: '.', Slash: '/', IntlBackslash: '\\', IntlRo: '/', Delete: 'DEL', Insert: 'INS', Home: 'HOME',
+    End: 'END', PageUp: 'PG ↑', PageDown: 'PG ↓', NumpadEnter: 'NUM ENTER'
+  };
+  let layout = null;   // nomes reais do layout do usuário (ex.: Ç no ABNT2), quando o navegador informa
+  try { if (navigator.keyboard && navigator.keyboard.getLayoutMap) navigator.keyboard.getLayoutMap().then(m => { layout = m; renderKeys(); refreshBadges(); }).catch(() => {}); } catch (e) {}
+  function keyName(code, short) {
+    if (!code) return '—';
+    const lm = layout && layout.get(code);
+    if (lm && lm.trim()) return lm.toUpperCase();
+    let n = KEY_NAMES[code];
+    if (!n) {
+      if (/^Key[A-Z]$/.test(code)) n = code.slice(3);
+      else if (/^Digit\d$/.test(code)) n = code.slice(5);
+      else if (/^Numpad/.test(code)) n = 'NUM ' + code.slice(6);
+      else n = code.toUpperCase();
+    }
+    return short ? n.replace(/ (ESQ|DIR)$/, '') : n;
+  }
+  window.keyLabel = id => keyName(GSET.keys[id], true);
+
+  // textos de ajuda do jogo (barra de controles, aviso do replay) mostram as teclas atuais
+  function refreshBadges() {
+    document.querySelectorAll('[data-acts]').forEach(el => {
+      const n = el.dataset.acts.split(',').map(id => keyLabel(id));
+      el.textContent = (el.dataset.prefix || '') + (n.every(x => x.length === 1) ? n.join('') : n.join(' / '));
+    });
+  }
+
+  /* ---------- camada de remapeamento + bloqueio do jogo com o menu aberto ---------- */
+  let listening = null;   // ação aguardando a nova tecla
+  const isOpen = () => panel.classList.contains('open');
+  const isTyping = e => { const t = e.target; return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable); };
+  function onKey(e) {
+    if (!e.isTrusted) return;   // teclas sintéticas (botões do celular e as já remapeadas) seguem direto
+    const down = e.type === 'keydown';
+    if (isOpen()) {
+      e.stopImmediatePropagation();   // com o menu aberto o jogo não recebe teclas
+      if (listening) {
+        e.preventDefault();
+        if (down && !e.repeat) { if (e.code === 'Escape') stopListen(true); else tryAssign(listening, e.code); }
+        return;
+      }
+      if (down && !e.repeat && (e.code === 'Escape' || (codeToAct[e.code] === 'settings' && !isTyping(e)))) { e.preventDefault(); closeSettings(); return; }
+      if (!isTyping(e)) pressFx(e.code, down);
+      return;
+    }
+    if (isTyping(e)) return;
+    const id = codeToAct[e.code], logical = id ? ACT[id].def : null;
+    if (logical === e.code) return;                       // tecla no lugar padrão
+    if (!id && !DEF_CODES.has(e.code)) return;            // tecla sem relação com o jogo
+    e.stopImmediatePropagation(); e.preventDefault();
+    if (!id) return;                                      // tecla padrão de uma ação que foi movida: fica muda
+    dispatchEvent(new KeyboardEvent(e.type, {
+      code: logical, key: logical, repeat: e.repeat, bubbles: true, cancelable: true,
+      ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey
+    }));
+  }
+  addEventListener('keydown', onKey, true);
+  addEventListener('keyup', onKey, true);
+  addEventListener('keydown', e => {   // ação "Abrir configurações" (chega aqui já como código lógico)
+    if (e.code === 'KeyP' && !e.repeat && !isTyping(e) && !isOpen()) openSettings();
+  });
+  // solta tudo que estava pressionado (inclusive no anfitrião, no online) antes de bloquear o teclado
+  function releaseGameKeys() {
+    for (const k in K) if (K[k]) dispatchEvent(new KeyboardEvent('keyup', { code: k, key: k, bubbles: true, cancelable: true }));
+  }
+
+  /* ---------- helpers de interface ---------- */
+  const h = (tag, attrs, ...kids) => {
+    const el = document.createElement(tag);
+    for (const k in (attrs || {})) {
+      const v = attrs[k];
+      if (v == null || v === false) continue;
+      if (k === 'class') el.className = v; else if (k.startsWith('on')) el[k] = v; else el.setAttribute(k, v);
+    }
+    for (const c of kids) if (c != null && c !== false) el.append(c);
+    return el;
+  };
+  const syncers = [];
+  const syncAll = () => syncers.forEach(f => f());
+  const savedEl = $('cfg-saved');
+  function changed() {
+    const t = new Date();
+    savedEl.querySelector('span').textContent = 'Salvo às ' + t.toLocaleTimeString('pt-BR');
+    savedEl.classList.remove('flash'); void savedEl.offsetWidth; savedEl.classList.add('flash');
+  }
+  const sec = (title, ...kids) => h('div', { class: 'cfg-sec' }, h('h4', null, title), ...kids);
+  const grid = (...rows) => h('div', { class: 'cfg-grid' }, ...rows);
+  const row = (label, meta, control, hint, cls) =>
+    h('div', { class: 'cfg-row' + (cls ? ' ' + cls : '') }, h('div', { class: 'lbl' }, h('b', null, label), meta ? h('em', null, meta) : null), control, hint ? h('small', null, hint) : null);
+
+  // slider + campo numérico; os dois respeitam min/max/step (o valor digitado é corrigido ao sair do campo)
+  function slider(o) {
+    const dec = (String(o.step).split('.')[1] || '').length;
+    const fmt = v => (+v).toFixed(dec);
+    const clampV = v => {
+      v = Number(v);
+      if (!isFinite(v)) return null;
+      v = Math.min(o.max, Math.max(o.min, v));
+      return +(Math.round((v - o.min) / o.step) * o.step + o.min).toFixed(dec);
+    };
+    const rng = h('input', { type: 'range', min: o.min, max: o.max, step: o.step, 'aria-label': o.label });
+    const num = h('input', { type: 'number', min: o.min, max: o.max, step: o.step, inputmode: 'decimal', 'aria-label': o.label + ' (valor exato)' });
+    const box = h('label', { class: 'cfg-num' }, num, o.unit ? h('span', null, o.unit.trim()) : null);
+    const show = v => { rng.value = v; num.value = fmt(v); box.classList.remove('bad'); };
+    const commit = v => { const c = clampV(v); if (c === null) { show(o.get()); return; } o.set(c); show(c); changed(); };
+    rng.oninput = () => commit(rng.value);
+    num.oninput = () => {
+      const v = Number(num.value), ok = num.value !== '' && isFinite(v) && v >= o.min && v <= o.max;
+      box.classList.toggle('bad', !ok);
+      if (ok) { o.set(clampV(v)); rng.value = v; changed(); }
+    };
+    num.onchange = () => commit(num.value);
+    num.onkeydown = e => { if (e.key === 'Enter') num.blur(); };
+    syncers.push(() => show(o.get()));
+    show(o.get());
+    return row(o.label, 'mín ' + fmt(o.min) + ' · máx ' + fmt(o.max) + (o.unit || ''), h('div', { class: 'cfg-slide' }, rng, box), o.hint, o.cls);
+  }
+  function seg(label, options, get, set, hint, cls, id) {
+    const wrap = h('div', { class: 'seg', id });
+    const btns = options.map(([v, t]) => {
+      const b = h('button', { type: 'button', 'data-v': String(v) }, t);
+      b.onclick = () => { set(v); sync(); changed(); };
+      wrap.append(b);
+      return b;
+    });
+    const sync = () => { const cur = String(get()); btns.forEach(b => b.classList.toggle('on', b.dataset.v === cur)); };
+    syncers.push(sync); sync();
+    return row(label, null, wrap, hint, cls);
+  }
+  const toggle = (label, get, set, hint, cls, labels = ['Ligado', 'Desligado']) => seg(label, [[true, labels[0]], [false, labels[1]]], get, set, hint, cls);
+
+  /* ---------- aba: câmera ---------- */
+  const C = GSET.cam;
+  const camSet = k => v => { C[k] = clampSetting(k, v); saveGSET(); };
+  const camSlider = (k, label, unit, hint) => slider({ label, ...GSET_LIM[k], unit, hint, get: () => C[k], set: camSet(k) });
+  $('cfg-tab-cam').append(
+    sec('Visão',
+      grid(
+        camSlider('fov', 'Campo de visão (FOV)', '°', 'Horizontal, medido em tela 16:9. Padrão 90°. Correr e enterrar ainda abrem um pouco a visão.'),
+        camSlider('dist', 'Distância da câmera', ' m', 'Afastamento atrás do jogador. Padrão 6.0 m.'),
+        camSlider('height', 'Altura da câmera', ' m', 'Deslocamento vertical somado à altura normal. Padrão 0.0 m.')
+      )),
+    sec('Mouse e movimento',
+      grid(
+        camSlider('sensX', 'Sensibilidade horizontal (X)', '×', 'Giro lateral com mouse ou dedo. Padrão 1.00×.'),
+        camSlider('sensY', 'Sensibilidade vertical (Y)', '×', 'Inclinação para cima e para baixo. Padrão 1.00×.'),
+        toggle('Inverter eixo Y', () => C.invertY, v => { C.invertY = v; saveGSET(); }, 'Mover o mouse para cima inclina a câmera para baixo.', null, ['Invertido', 'Normal']),
+        camSlider('smooth', 'Suavização da câmera', '%', '0% acompanha o jogador na hora; 100% desliza bem suave. Padrão 50%.'),
+        toggle('Câmera fixa na bola', () => camBallLock, v => { if (camBallLock !== v) toggleCamLock(); }, 'Gira a câmera sozinha para acompanhar a bola.')
+      ))
+  );
+
+  /* ---------- aba: controles e teclado virtual ---------- */
+  const KB_ROWS = [
+    [['Escape', 1], [null, 14]],
+    [['Backquote', 1], ...'1234567890'.split('').map(d => ['Digit' + d, 1]), ['Minus', 1], ['Equal', 1], ['Backspace', 2]],
+    [['Tab', 1.5], ...'QWERTYUIOP'.split('').map(c => ['Key' + c, 1]), ['BracketLeft', 1], ['BracketRight', 1], ['Backslash', 1.5]],
+    [['CapsLock', 1.75], ...'ASDFGHJKL'.split('').map(c => ['Key' + c, 1]), ['Semicolon', 1], ['Quote', 1], ['Enter', 2.25]],
+    [['ShiftLeft', 2.25], ...'ZXCVBNM'.split('').map(c => ['Key' + c, 1]), ['Comma', 1], ['Period', 1], ['Slash', 1], ['ShiftRight', 2.75]],
+    [['ControlLeft', 1.5], ['MetaLeft', 1.25], ['AltLeft', 1.25], ['Space', 7], ['AltRight', 1.25], ['ContextMenu', 1.25], ['ControlRight', 1.5]]
+  ];
+  const KB_SHORT = { ShiftLeft: 'SHIFT', ShiftRight: 'SHIFT', ControlLeft: 'CTRL', ControlRight: 'CTRL' };
+  const kbKeys = {};
+  const mkKey = (code, w) => {
+    if (!code) return h('div', { style: 'flex:' + w + ' 1 0' });
+    const k = h('button', { type: 'button', class: 'kk', 'data-code': code, style: 'flex:' + w + ' 1 0' });
+    k.onclick = () => keyClick(code);
+    k.onmouseenter = () => showKeyInfo(code);
+    k.onmouseleave = () => showKeyInfo(null);
+    kbKeys[code] = k;
+    return k;
+  };
+  const kb = h('div', { class: 'kb' }, ...KB_ROWS.map(r => h('div', { class: 'kb-row' }, ...r.map(([c, w]) => mkKey(c, w)))));
+  const arrows = h('div', { class: 'kb-arrows' }, ...['ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight'].map(c => mkKey(c, 1)));
+  const kbWrap = h('div', { class: 'kb-wrap' }, kb, arrows);
+  const kbInfoText = h('span', null);
+  const kbInfo = h('div', { class: 'kb-info' }, kbInfoText,
+    h('span', { class: 'kb-legend' }, ...Object.entries(GROUPS).map(([g, n]) => h('span', { style: '--c:var(--k-' + g + ')' }, n)),
+      h('span', { style: '--c:repeating-linear-gradient(135deg,#666 0 2px,transparent 2px 4px)' }, 'Reservada')));
+  const alertBox = h('div', { class: 'cfg-alert', role: 'alert' });
+  const bindRows = {};
+  const bindSecs = Object.entries(GROUPS).map(([g, title]) => sec(title, h('div', { class: 'bind-list' },
+    ...ACTIONS.filter(a => a.g === g).map(a => {
+      const btn = h('button', { type: 'button', class: 'kbtn', title: 'Clique para trocar a tecla' });
+      btn.onclick = () => startListen(a.id);
+      const r = h('div', { class: 'bind-row g-' + g }, h('div', { class: 'nm' }, a.name, a.hint ? h('small', null, a.hint) : null), btn);
+      r.onmouseenter = () => { const c = GSET.keys[a.id]; if (c && kbKeys[c]) kbKeys[c].classList.add('sel'); };
+      r.onmouseleave = () => document.querySelectorAll('.kk.sel').forEach(k => k.classList.remove('sel'));
+      bindRows[a.id] = { r, btn };
+      return r;
+    }))));
+  $('cfg-tab-keys').append(
+    sec('Teclado', kbWrap, kbInfo),
+    alertBox,
+    ...bindSecs,
+    h('small', { style: 'display:block;color:var(--c-dim);font-size:11.5px' },
+      'Uma tecla só pode ter uma ação. ESC, TAB, WIN e F5/F11/F12 são reservadas. No celular, os botões de toque continuam iguais.')
+  );
+
+  const defaultInfo = () => listening
+    ? 'Pressione a nova tecla para «' + ACT[listening].name + '» ou clique nela no teclado acima. ESC cancela.'
+    : 'Passe o mouse sobre uma tecla para ver a ação. Clique em uma ação abaixo para trocar a tecla.';
+  function showKeyInfo(code) {
+    kbInfoText.textContent = '';
+    if (!code) { kbInfoText.textContent = defaultInfo(); return; }
+    const id = codeToAct[code];
+    kbInfoText.append(h('b', null, keyName(code)), ' — ',
+      RESERVED[code] ? 'reservada (' + RESERVED[code] + ')' : id ? ACT[id].name : 'livre');
+  }
+  function renderKeys() {
+    for (const code in kbKeys) {
+      const k = kbKeys[code], id = codeToAct[code];
+      k.className = 'kk' + (id ? ' bound g-' + ACT[id].g : '') + (RESERVED[code] ? ' reserved' : '');
+      k.textContent = KB_SHORT[code] || keyName(code);
+      k.title = keyName(code) + ' — ' + (RESERVED[code] ? 'reservada' : id ? ACT[id].name : 'livre');
+    }
+    for (const id in bindRows) {
+      bindRows[id].btn.textContent = listening === id ? 'Pressione…' : keyName(GSET.keys[id]);
+      bindRows[id].r.classList.toggle('listening', listening === id);
+    }
+    kbWrap.classList.toggle('listening', !!listening);
+    showKeyInfo(null);
+  }
+  function pressFx(code, down) {
+    const k = kbKeys[code];
+    if (k) k.classList.toggle('down', down);
+    if (down) {
+      showKeyInfo(code);
+      const id = codeToAct[code];
+      document.querySelectorAll('.bind-row.hl').forEach(r => r.classList.remove('hl'));
+      if (id) { bindRows[id].r.classList.add('hl'); bindRows[id].r.scrollIntoView({ block: 'nearest' }); }
+    }
+  }
+  function keyClick(code) {
+    if (listening) { tryAssign(listening, code); return; }
+    showKeyInfo(code);
+    const id = codeToAct[code];
+    document.querySelectorAll('.bind-row.hl').forEach(r => r.classList.remove('hl'));
+    if (id) { bindRows[id].r.classList.add('hl'); bindRows[id].r.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+  }
+  function showAlert(text, kind, buttons) {
+    alertBox.textContent = '';
+    alertBox.className = 'cfg-alert show' + (kind === 'info' ? ' info' : '');
+    alertBox.append(h('p', null, ...text));
+    if (buttons) alertBox.append(h('div', { class: 'seg' }, ...buttons.map(([t, fn, primary]) => {
+      const b = h('button', { type: 'button', class: primary ? 'on' : null }, t); b.onclick = fn; return b;
+    })));
+  }
+  const hideAlert = () => { alertBox.className = 'cfg-alert'; };
+  function startListen(id) {
+    hideAlert();
+    listening = listening === id ? null : id;
+    renderKeys();
+    if (document.activeElement) document.activeElement.blur();   // ESPAÇO/ENTER não reativam o botão
+  }
+  function stopListen(cancelled) {
+    listening = null;
+    renderKeys();
+    if (cancelled) showAlert(['Troca de tecla cancelada.'], 'info');
+  }
+  function tryAssign(id, code) {
+    if (RESERVED[code]) {   // continua aguardando outra tecla
+      showAlert(['A tecla ', h('b', null, keyName(code)), ' é reservada (' + RESERVED[code] + ') e não pode ser usada.']);
+      return;
+    }
+    const cur = GSET.keys[id];
+    if (code === cur) { stopListen(); return; }
+    const other = codeToAct[code];
+    if (other) {   // conflito: nada é alterado sem confirmação
+      stopListen();
+      showAlert(['A tecla ', h('b', null, keyName(code)), ' já está em uso pela ação ', h('b', null, '«' + ACT[other].name + '»'), '. ',
+        cur ? 'Trocar faz «' + ACT[other].name + '» passar para ' + keyName(cur) + '.' : '«' + ACT[other].name + '» ficaria sem tecla.'], 'err', [
+        ['Trocar as teclas', () => { GSET.keys[other] = cur || ''; setBinding(id, code, other); }, true],
+        ['Cancelar', () => { hideAlert(); }]
+      ]);
+      return;
+    }
+    setBinding(id, code);
+  }
+  function setBinding(id, code, swapped) {
+    GSET.keys[id] = code;
+    rebuildMap(); saveGSET(); changed();
+    listening = null; hideAlert(); renderKeys(); refreshBadges();
+    for (const x of [id, swapped]) if (x) { const r = bindRows[x].r; r.classList.remove('flash'); void r.offsetWidth; r.classList.add('flash'); }
+    showAlert(['«' + ACT[id].name + '» agora usa ', h('b', null, keyName(code)), swapped ? ' e «' + ACT[swapped].name + '» usa ' + keyName(GSET.keys[swapped]) + '.' : '.'], 'info');
+  }
+
+  /* ---------- aba: gráficos ---------- */
+  const G = GSET.gfx;
+  const PRESETS = {
+    baixo: { res: 35,  post: false, shadows: 'off' },
+    medio: { res: 55,  post: true,  shadows: 'media' },
+    alto:  { res: 75,  post: true,  shadows: 'alta' },
+    ultra: { res: 100, post: true,  shadows: 'alta' }
+  };
+  const detectPreset = () => {
+    G.preset = Object.keys(PRESETS).find(p => PRESETS[p].res === M.cfg.res && PRESETS[p].post === G.post && PRESETS[p].shadows === G.shadows) || 'custom';
+    saveGSET();
+  };
+  const applyGfx = () => { setFX(G.post); saveGSET(); };
+  if (!GSET.loaded && M.cfg.fx === false) G.post = false;   // herda o antigo "Visual: desligado"
+  $('cfg-tab-gfx').append(
+    sec('Qualidade',
+      grid(
+        seg('Qualidade geral', [['baixo', 'Baixo'], ['medio', 'Médio'], ['alto', 'Alto'], ['ultra', 'Ultra'], ['custom', 'Personalizado']],
+          () => G.preset,
+          p => { if (!PRESETS[p]) return; const P0 = PRESETS[p]; G.post = P0.post; G.shadows = P0.shadows; M.applyRes(P0.res); applyGfx(); detectPreset(); syncAll(); },
+          'Ajusta resolução, sombras e pós-processamento de uma vez. Mexer em um deles vira “Personalizado”.'),
+        slider({ label: 'Resolução interna', min: 20, max: 100, step: 5, unit: '%', get: () => M.cfg.res,
+          set: v => { M.applyRes(v); detectPreset(); syncAll(); }, hint: 'Menos resolução = mais desempenho (pixels nítidos, sem borrar). Cai sozinha se o FPS despencar.' }),
+        seg('Sombras', [['off', 'Desligadas'], ['baixa', 'Baixa'], ['media', 'Média'], ['alta', 'Alta']], () => G.shadows,
+          v => { G.shadows = v; applyGfx(); detectPreset(); syncAll(); }, 'Sombras em tempo real (mapa de 512 / 1024 / 2048 px; no celular o máximo é 1024).'),
+        toggle('Pós-processamento', () => G.post, v => { G.post = v; applyGfx(); detectPreset(); syncAll(); },
+          'Tone mapping, dither pixelado, vinheta e luz da cesta. Desligue se o jogo ficar pesado.')
+      )),
+    sec('Efeitos',
+      grid(
+        toggle('Filtro VHS retrô', () => !!window.retro, v => window.setRetro(v), 'Imagem estilo fita VHS (também na tecla do “Filtro VHS”). Precisa do pós-processamento.'),
+        seg('Motion blur', [[0, 'Desligado'], [0.45, 'Baixo'], [0.65, 'Médio'], [0.8, 'Alto']], () => M.cfg.mb, v => M.applyMb(v),
+          'Rastro suave nos movimentos rápidos de câmera, jogadores e bola.')
+      )),
+    sec('Desempenho',
+      grid(
+        seg('Limite de FPS', [[30, '30'], [60, '60'], [120, '120'], [144, '144'], [0, 'Sem limite']], () => G.fpsCap,
+          v => { G.fpsCap = v; saveGSET(); }, 'Limitar economiza bateria e esquenta menos o aparelho.'),
+        toggle('V-Sync', () => G.vsync, v => { G.vsync = v; saveGSET(); },
+          'No navegador a imagem já é sempre sincronizada com o monitor; a opção fica salva para versões nativas do jogo.'),
+        toggle('Mostrar contador de FPS', () => G.showFps, v => { G.showFps = v; saveGSET(); fpsEl.hidden = !v; }, 'Mostra os quadros por segundo no canto superior direito.')
+      ))
+  );
+  // o filtro VHS também muda pela tecla: guarda a escolha
+  const rawSetRetro = window.setRetro;
+  window.setRetro = on => { rawSetRetro(on); G.retro = !!on; saveGSET(); if (isOpen()) syncAll(); };
+  if (!G.retro) rawSetRetro(false);
+  applyGfx(); detectPreset();
+
+  const fpsEl = $('fps-counter');
+  let fN = 0, fT = performance.now();
+  fpsEl.hidden = !G.showFps;
+  window.fpsTick = now => {
+    if (!G.showFps) return;
+    fN++;
+    if (now - fT >= 500) { fpsEl.textContent = Math.round(fN * 1000 / (now - fT)) + ' FPS'; fN = 0; fT = now; }
+  };
+
+  /* ---------- aba: áudio e geral ---------- */
+  const A = audio;
+  const pct = (label, get, set, hint, cls) => slider({ label, min: 0, max: 100, step: 1, unit: '%', get: () => Math.round(get() * 100), set: v => set(v / 100), hint, cls });
+  const isNight = () => { try { return localStorage.getItem('sh_daynight') === 'night'; } catch (e) { return false; } };
+  const modeRow = seg('Tipo de controle', [['auto', 'Automático'], ['pc', 'Computador'], ['mobile', 'Celular']], () => M.cfg.mode, v => { M.setMode(v); refreshBadges(); }, ' ');
+  modeRow.querySelector('small').id = 'cfg-detect';
+  modeRow.querySelector('.seg').id = 'cfg-mode';
+  const actBtn = (text, fn) => { const b = h('button', { type: 'button', class: 'act' }, text); b.onclick = fn; return b; };
+  $('cfg-tab-aud').append(
+    sec('Volume',
+      grid(
+        pct('Volume geral', () => GSET.aud.master, v => A.setMasterVolume(v), 'Controla todo o som do jogo.'),
+        pct('Efeitos (SFX)', () => GSET.aud.sfx, v => A.setSfxVolume(v), 'Bola, tênis, apito e buzina.'),
+        pct('Música / ambiente', () => A.volMusic, v => A.setMusicVolume(v), 'Beat boom bap lo-fi instrumental.'),
+        toggle('Som', () => !A.isMuted, v => { if (A.isMuted === v) window.toggleMuteAudio(); }, 'Silencia tudo de uma vez (tecla do “Som”).', null, ['Ligado', 'Mudo']),
+        toggle('Beat', () => A.beatEnabled, v => A.setBeatEnabled(v), 'Liga ou desliga a música de fundo (tecla do “Beat”).')
+      )),
+    sec('Mixagem dos efeitos',
+      grid(
+        pct('Bola', () => A.volBall, v => A.setBallVolume(v), 'Quique na quadra, tabela, aro e cesta.'),
+        pct('Tênis', () => A.volShoes, v => A.setShoesVolume(v), 'Atrito da borracha no piso e cortes rápidos.')
+      )),
+    sec('Geral',
+      grid(
+        modeRow,
+        slider({ label: 'Sensibilidade do toque', min: 0.5, max: 2, step: 0.05, unit: '×', get: () => M.cfg.sens, set: v => M.setSens(v), hint: 'Multiplica a sensibilidade X/Y da câmera ao arrastar o dedo.', cls: 'cfg-mob-only' }),
+        slider({ label: 'Tamanho dos botões', min: 0.8, max: 1.3, step: 0.05, unit: '×', get: () => M.cfg.size, set: v => M.setSize(v), hint: 'Botões de toque e joystick.', cls: 'cfg-mob-only' }),
+        toggle('Barra de controles', () => !$('controls-bar').classList.contains('hidden'), v => window.toggleControls(v), 'Dicas de teclas na parte de baixo da tela.', null, ['Visível', 'Oculta']),
+        toggle('Horário', () => !isNight(), v => window.setDayNight && window.setDayNight(!v), 'Também no botão ☀/🌙 do canto esquerdo.', null, ['Dia', 'Noite'])
+      ),
+      h('div', { class: 'cfg-acts', style: 'margin-top:10px' },
+        actBtn('Tela cheia', () => M.goFull()),
+        h('a', { class: 'act', href: 'https://open.spotify.com/playlist/5RGljA8YyaKCIfSM0p67E4?si=780caa3be62b4417', target: '_blank', rel: 'noopener noreferrer' }, '♪ Trilha sonora ↗'),
+        actBtn('Reiniciar partida', () => { closeSettings(); reset(); }),
+        actBtn('Voltar ao menu', () => { closeSettings(); openStartMenu(); })
+      ))
+  );
+
+  /* ---------- restaurar padrões ---------- */
+  const RESETS = {
+    cam: () => { Object.assign(GSET.cam, GSET_DEF.cam); if (camBallLock) toggleCamLock(); saveGSET(); },
+    keys: () => { GSET.keys = defaultKeys(); rebuildMap(); saveGSET(); listening = null; hideAlert(); renderKeys(); refreshBadges(); },
+    gfx: () => {
+      Object.assign(G, GSET_DEF.gfx); fpsEl.hidden = true;
+      M.applyRes(PRESETS.medio.res); M.applyMb(0); applyGfx(); window.setRetro(true); detectPreset();
+    },
+    aud: () => {
+      A.setMasterVolume(1); A.setSfxVolume(1); A.setMusicVolume(0.7); A.setBallVolume(0.8); A.setShoesVolume(0.6);
+      A.setBeatEnabled(true); if (A.isMuted) window.toggleMuteAudio();
+      M.setMode('auto'); M.setSens(1); M.setSize(1); window.toggleControls(true);
+    }
+  };
+  const TAB_NAMES = { cam: 'Câmera & Visão', keys: 'Controles & Teclas', gfx: 'Gráficos & Vídeo', aud: 'Áudio & Geral' };
+  // botão em dois cliques: o primeiro pede confirmação
+  function confirmBtn(btn, label, fn) {
+    let armed = 0;
+    btn.onclick = () => {
+      if (armed) { clearTimeout(armed); armed = 0; btn.classList.remove('warn'); btn.textContent = label(); fn(); syncAll(); changed(); return; }
+      btn.classList.add('warn'); btn.textContent = 'Confirmar?';
+      armed = setTimeout(() => { armed = 0; btn.classList.remove('warn'); btn.textContent = label(); }, 3500);
+    };
+  }
+  const resetTabBtn = $('cfg-reset-tab'), resetAllBtn = $('cfg-reset-all');
+  confirmBtn(resetTabBtn, () => 'Restaurar esta aba', () => RESETS[curTab]());
+  confirmBtn(resetAllBtn, () => 'Restaurar tudo', () => { for (const k in RESETS) RESETS[k](); });
+
+  /* ---------- abas, abrir e fechar ---------- */
+  let curTab = 'cam';
+  try { const t = localStorage.getItem('aerohoop_cfg_tab'); if (TAB_NAMES[t]) curTab = t; } catch (e) {}
+  function setTab(t) {
+    curTab = t;
+    document.querySelectorAll('#cfg-panel .cfg-tab-btn').forEach(b => { const on = b.dataset.tab === t; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+    for (const k in TAB_NAMES) $('cfg-tab-' + k).hidden = k !== t;
+    resetTabBtn.title = 'Volta “' + TAB_NAMES[t] + '” para os valores padrão';
+    if (listening) stopListen();
+    hideAlert();
+    try { localStorage.setItem('aerohoop_cfg_tab', t); } catch (e) {}
+  }
+  document.querySelectorAll('#cfg-panel .cfg-tab-btn').forEach(b => b.onclick = () => setTab(b.dataset.tab));
+
+  function openSettings(tab) {
+    releaseGameKeys();
+    if (document.pointerLockElement) { try { document.exitPointerLock(); } catch (e) {} }
+    panel.classList.add('open');
+    setTab(tab || curTab);
+    M.applyMode(); syncAll(); renderKeys(); refreshBadges();
+  }
+  function closeSettings() {
+    listening = null; hideAlert();
+    document.querySelectorAll('.kk.down').forEach(k => k.classList.remove('down'));
+    panel.classList.remove('open');
+  }
+  window.openSettings = openSettings;
+  window.closeSettings = closeSettings;
+  const toggleSettings = () => (isOpen() ? closeSettings() : openSettings());
+  $('cfg-btn').onclick = toggleSettings;
+  if ($('btn-start-settings')) $('btn-start-settings').onclick = toggleSettings;
+  $('cfg-close').onclick = closeSettings;
+  $('cfg-done').onclick = closeSettings;
+  panel.addEventListener('click', e => { if (e.target === panel) closeSettings(); });   // clique fora da janela fecha
+
+  setTab(curTab);
+  M.applyMode(); renderKeys(); refreshBadges();
+})();
 </script>
 <style id="aero-late">
 /* Camada final: restiliza elementos criados via JS e o bloco mobile (mesma linguagem visual) */
@@ -10160,44 +10757,27 @@ html #cfg-btn {
   box-shadow: 0 6px 18px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.5);
 }
 
-html #cfg-panel, html #wpanel, html #face-panel {
+html #wpanel, html #face-panel {
   font-family: var(--font); color: #fff;
   background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.02) 50%, rgba(0,0,0,.6)), rgba(15,2,5,.85);
   border: 1px solid rgba(255,255,255,.25); border-radius: 24px;
   -webkit-backdrop-filter: blur(22px) saturate(1.4); backdrop-filter: blur(22px) saturate(1.4);
   box-shadow: 0 18px 44px rgba(0,0,0,.85), 0 0 1px rgba(109,0,26,0.6), inset 0 1px 0 rgba(255,255,255,.35);
 }
-html #cfg-panel h3, html #wpanel h3, html #face-panel h3 {
+html #wpanel h3, html #face-panel h3 {
   font: 600 14px var(--font); letter-spacing: .22em; text-transform: uppercase; color: #fff; margin: 0 0 10px;
 }
 html #face-panel h4 { font: 600 10px var(--font); letter-spacing: .22em; color: #e2b4be; }
-html #cfg-panel label { font: 600 10px var(--font); letter-spacing: .16em; color: rgba(255,255,255,.78); }
-html #cfg-panel small { color: rgba(255,255,255,.6); }
-html #cfg-panel input[type=range], html #face-panel input[type=range] { accent-color: #6D001A; }
-html #cfg-panel .seg button, html #cfg-panel .act, html #face-panel .chip, html .wc {
+html #face-panel input[type=range] { accent-color: #6D001A; }
+html #face-panel .chip, html .wc {
   font-family: var(--font); color: #fff;
   background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.2);
   border-radius: 12px; box-shadow: inset 0 1px 0 rgba(255,255,255,.25);
 }
-html #cfg-panel .seg button:hover, html #cfg-panel .act:hover, html #face-panel .chip:hover, html .wc:hover { background: rgba(109,0,26,.3); border-color: rgba(255,255,255,.5); }
-html #cfg-panel .seg button.on, html #face-panel .chip.on, html .wc.on {
+html #face-panel .chip:hover, html .wc:hover { background: rgba(109,0,26,.3); border-color: rgba(255,255,255,.5); }
+html #face-panel .chip.on, html .wc.on {
   background: linear-gradient(180deg, #8f0b27 0%, #6D001A 50%, #450010 100%);
   border-color: rgba(255,255,255,.6); text-shadow: 0 1px 2px rgba(0,0,0,.7);
-}
-html .cfg-tabs {
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 14px;
-}
-html .cfg-tab-btn {
-  font-family: var(--font);
-  border-radius: 10px;
-}
-html .cfg-tab-btn.on {
-  background: linear-gradient(180deg, #8f0b27 0%, #6D001A 50%, #450010 100%);
-  border-color: rgba(255, 255, 255, 0.55);
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(109, 0, 26, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 html .wc.on { background: rgba(109,0,26,.35); border-color: #6D001A; text-shadow: none; }
 html #face-panel .sw { border-color: rgba(255,255,255,.35); }
