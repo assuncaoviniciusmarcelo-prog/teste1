@@ -222,27 +222,28 @@ canvas {
 }
 #stamina-container.exhausted { border-color: rgba(255,80,80,0.8); animation: pulseExhausted 0.6s infinite alternate; }
 
-/* Ritmo do drible: a marca corre pela barra; centro = bola chegando na mão */
+/* Ritmo do drible: arco ao lado do jogador; a marca sobe pelo arco e o centro = bola chegando na mão */
 #drib-hud {
-  position: fixed; left: 50%; bottom: 122px; transform: translateX(-50%); z-index: 20; pointer-events: none;
-  display: flex; flex-direction: column; align-items: center; gap: 6px; opacity: 0; transition: opacity .18s ease;
+  position: fixed; left: 0; top: 0; z-index: 20; pointer-events: none; will-change: transform;
+  display: block; opacity: 0; transition: opacity .18s ease;
   background: none; border: 0; box-shadow: none; padding: 0;
 }
 #drib-hud::before { display: none; }
 #drib-hud.on { opacity: 1; }
-#drib-meter {
-  position: relative; width: 190px; height: 8px; border-radius: 99px; overflow: hidden;
-  background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.28);
-}
-#drib-meter i { position: absolute; top: 0; bottom: 0; left: 50%; transform: translateX(-50%); }
-#drib-meter .z-good { background: rgba(255,255,255,.22); }
-#drib-meter .z-perfect { background: #3ecf8e; box-shadow: 0 0 8px rgba(62,207,142,.8); }
-#drib-mark { position: absolute; top: -2px; bottom: -2px; width: 3px; margin-left: -1.5px; border-radius: 2px; background: #fff; box-shadow: 0 0 6px #fff; }
+#drib-meter { display: block; overflow: visible; filter: drop-shadow(0 2px 4px rgba(0,0,0,.7)); }
+#drib-meter path { fill: none; stroke-linecap: round; }
+#drib-meter .arc-bg { stroke: rgba(0,0,0,.6); stroke-width: 9; }
+#drib-meter .arc-good { stroke: rgba(255,255,255,.32); stroke-width: 7; }
+#drib-meter .arc-perfect { stroke: #3ecf8e; stroke-width: 7; filter: drop-shadow(0 0 4px rgba(62,207,142,.9)); }
+#drib-mark { fill: #fff; stroke: rgba(0,0,0,.55); stroke-width: 1.5; filter: drop-shadow(0 0 4px #fff); }
+#drib-mark.in-perfect { fill: #b6ffd9; }
 #drib-pop, #drib-combo { font: 700 13px var(--font); letter-spacing: .14em; text-transform: uppercase; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.9); opacity: 0; white-space: nowrap; }
 #drib-pop.perfect { color: #3ecf8e; }
 #drib-pop.late { color: #ff6b81; }
 #drib-combo { font-size: 15px; color: #ffd2a0; }
-body.mobile #drib-hud { bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) scale(.8); }
+#drib-pop { position: absolute; left: 14px; top: -6px; }
+#drib-combo { position: absolute; left: 14px; bottom: -8px; }
+body.mobile #drib-meter { width: 56px; height: 120px; }
 body.in-menu #drib-hud { display: none; }
 /* Cooldown do bote: barrinha que esvazia sob os pés do jogador; pisca quando o bote volta */
 #steal-cd {
@@ -1071,7 +1072,10 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
 <!-- RITMO DO DRIBLE / COMBO -->
 <div class="hud" id="drib-hud" aria-hidden="true">
   <div id="drib-pop"></div>
-  <div id="drib-meter"><i class="z-good"></i><i class="z-perfect"></i><b id="drib-mark"></b></div>
+  <svg id="drib-meter" viewBox="0 0 70 150" width="70" height="150">
+    <path class="arc-bg" d=""/><path class="arc-good" d=""/><path class="arc-perfect" d=""/>
+    <circle id="drib-mark" r="5.5" cx="0" cy="0"/>
+  </svg>
   <div id="drib-combo"></div>
 </div>
 <!-- COOLDOWN DO BOTE (sob o jogador) E TEXTO DO ANKLE BREAKER -->
@@ -5845,12 +5849,12 @@ const STEAL_DUR = 0.46 * 1.3, STEAL_CONTACT = 0.12 * 1.3;   // bote 30% mais len
 /* ---- BOTE: acerto mais fácil e limpo; errar (whiff) deixa o defensor vendido ----
    Whiff = bote no portador que não pega a bola: cooldown sem novo bote + passos iniciais quase sem acelerar.
    ANKLE BREAKER = whiff com o atacante fazendo um corte lateral até ANKLE_WINDOW antes ou depois:
-   o defensor desliza para o lado errado, cai e fica fora da jogada pelo tempo do cooldown. */
+   a reação (queda total, apoio no chão ou só desequilíbrio) sai da postura real dos pés no instante do corte. */
 const STEAL_RANGE = 62;         // alcance do bote do jogador (era 48)
 const WHIFF_CD = 1.8;           // sem poder dar outro bote após errar
 const WHIFF_RECOVER = 0.7;      // início do erro: velocidade e aceleração travadas
 const ANKLE_WINDOW = 0.4;       // coincidência entre o corte do atacante e o bote errado
-const ANKLE_DUR = 1.8;          // queda + recuperação (= cooldown do erro)
+const ANKLE_DUR = 1.8;          // duração máxima da reação (queda total); as outras variantes são mais curtas
 
 function stealWhiff(o, T) {
   o.stealCD = Math.max(o.stealCD || 0, WHIFF_CD);
@@ -5863,32 +5867,67 @@ function markCut(T) {
   T.cutWin = ANKLE_WINDOW;
   for (const E of oppsOf(T)) if (E.whiffWin > 0 && !(E.ankle > 0) && D(E, T) < 85) ankleBreak(E, T);
 }
+const _akL = new THREE.Vector3(), _akR = new THREE.Vector3(), _akC = new THREE.Vector3();
 function ankleBreak(o, T) {
   if (o.ankle > 0) return;
-  o.ankle = ANKLE_DUR; o.whiffWin = 0;
-  o.stealCD = Math.max(o.stealCD || 0, ANKLE_DUR); o.recover = Math.max(o.recover || 0, ANKLE_DUR);
-  o.steal = 0; o.stealPend = null; o.stealGoT = 0; o.block = 0;
-  // desliza para o lado errado: oposto ao movimento lateral do atacante em relação ao defensor
+  // 1) leitura do corpo no instante do corte: pés, pé de apoio e centro de massa (pelve) projetados no chão
+  const m = o._m;
+  let pivot = o.hand > 0 ? 1 : -1, comX = 0, comY = 0, haveFeet = false;
+  if (m && m.tL && m.pelvis) {
+    m.updateMatrixWorld(true);
+    m.tL.kn.ft.getWorldPosition(_akL); m.tR.kn.ft.getWorldPosition(_akR); m.pelvis.getWorldPosition(_akC);
+    // apoio = pé plantado (mais baixo); empate: o que está mais perto da projeção do centro de massa
+    const dh = _akL.y - _akR.y;
+    const dL = Math.hypot(_akC.x - _akL.x, _akC.z - _akL.z), dR = Math.hypot(_akC.x - _akR.x, _akC.z - _akR.z);
+    pivot = Math.abs(dh) > 0.025 ? (dh < 0 ? -1 : 1) : (dL < dR ? -1 : 1);       // -1 = esquerdo, +1 = direito
+    // peso fora da base: centro de massa em relação ao meio dos dois pés (base de apoio)
+    comX = (_akC.x - (_akL.x + _akR.x) / 2) / s; comY = (_akC.z - (_akL.z + _akR.z) / 2) / s;
+    haveFeet = true;
+  }
+  // 2) direção da queda: inércia do corpo + centro de massa fora da base + o lado que ele "comprou" na finta
   const rx = T.x - o.x, ry = T.y - o.y, rl = Math.hypot(rx, ry) || 1;
-  const px = -ry / rl, py = rx / rl;
-  const lv = T.vx * px + T.vy * py;
-  const side = Math.abs(lv) > 10 ? Math.sign(lv) : (T.hand || 1);
-  const sx = -side * px, sy = -side * py;
-  o.vx = sx * 150; o.vy = sy * 150;
-  o.ragImpulseX = (o.ragImpulseX || 0) + sx * 1.1;
-  o.ragImpulseY = (o.ragImpulseY || 0) + sy * 1.1;
-  // lado da queda no corpo do defensor (o modelo tomba para onde desliza)
-  const rgtX = -Math.cos(o.ry), rgtY = Math.sin(o.ry);   // "direita" do defensor (mesma convenção de stealExposure)
-  o.ankleDir = (sx * rgtX + sy * rgtY) >= 0 ? 1 : -1;
+  const px = -ry / rl, py = rx / rl, lv = T.vx * px + T.vy * py;
+  const fakeSide = Math.abs(lv) > 10 ? -Math.sign(lv) : -(T.hand || 1);
+  const sp = Math.hypot(o.vx, o.vy), comL = Math.hypot(comX, comY);
+  let dx = 0, dy = 0;
+  if (sp > 15) { dx += 0.5 * o.vx / sp; dy += 0.5 * o.vy / sp; }
+  if (comL > 0.5) { dx += 0.25 * comX / comL; dy += 0.25 * comY / comL; }
+  dx += 0.25 * fakeSide * px; dy += 0.25 * fakeSide * py;
+  const dl = Math.hypot(dx, dy) || 1;
+  dx /= dl; dy /= dl;
+  // 3) gravidade: quanto mais rápido, mais fora da base e melhor o drible, maior o tombo
+  const momK = cl((sp - 60) / 180, 0, 1);                                           // o próprio bote já dá ~60 de inércia
+  const offK = haveFeet ? cl(comL / 6, 0, 1) : 0.4;                                 // 6 unidades ≈ 18 cm do centro de massa fora da base
+  const q = activeMove(T) ? ({ perfect: 1, good: 0.5, late: 0.15 }[T.mvGrade] ?? 0.4) : 0.4;   // pivô sem drible conta como 0.4
+  const comboK = 0.08 * Math.min((T.combo || 1) - 1, 3);
+  const sev = 0.35 * momK + 0.15 * offK + 0.4 * q + comboK + (R() - 0.5) * 0.18;
+  const type = sev > 0.72 ? 'fall' : (sev > 0.45 ? 'catch' : 'stumble');
+  const V = ANKLE_VARIANTS[type];
+
+  o.ankType = type; o.ankDur = V.dur; o.ankle = V.dur; o.whiffWin = 0;
+  o.ankPivot = pivot; o.ankDX = dx; o.ankDY = dy;
+  o.ankSlide = cl(Math.max(sp, 110) * (type === 'fall' ? 1.05 : type === 'catch' ? 0.95 : 0.9), 100, 190);
+  // queda no referencial do corpo (frente/lado), fixo durante a reação
+  const fX = Math.sin(o.ry), fY = Math.cos(o.ry), rgX = -Math.cos(o.ry), rgY = Math.sin(o.ry);
+  o.ankFwd = dx * fX + dy * fY; o.ankSide = dx * rgX + dy * rgY;
+  o.stealCD = Math.max(o.stealCD || 0, Math.max(WHIFF_CD, V.dur));
+  o.recover = Math.max(o.recover || 0, V.dur + (type === 'stumble' ? 0.35 : 0.15));   // fica vulnerável logo depois
+  o.steal = 0; o.stealPend = null; o.stealGoT = 0; o.block = 0;
+  o.ragImpulseX = (o.ragImpulseX || 0) + dx * 0.9;
+  o.ragImpulseY = (o.ragImpulseY || 0) + dy * 0.9;
   o.ankleSeq = (o.ankleSeq || 0) + 1;          // efeitos visuais (inclusive no convidado) disparam pela mudança
   T.combo = Math.min((T.combo || 1) + 1, 9); T.comboT = Math.max(T.comboT || 0, COMBO_WINDOW);
-  if (typeof audio !== 'undefined') { audio.playShoeSqueak(1.0); setTimeout(() => audio.playShoeSqueak(0.7), 90); audio.playBounce(0.6); }
+  if (typeof audio !== 'undefined') { audio.playShoeSqueak(1.0); setTimeout(() => audio.playShoeSqueak(0.7), 90); if (type !== 'stumble') setTimeout(() => audio.playBounce(0.6), type === 'fall' ? 470 : 380); }
 }
-// Movimento de quem está caído: escorrega com atrito e não responde a comandos
+// Root motion da reação: desliza/tropeça na direção da queda pela curva "speed" da variante; sem controle
 function ankleSlide(o, dt) {
   if (!(o.ankle > 0)) return false;
-  const f = Math.exp(-(o.ankle > ANKLE_DUR - 0.35 ? 3.2 : 12) * dt);
-  o.vx *= f; o.vy *= f;
+  const ch = ankleChannels(o);
+  let v = (o.ankSlide || 140) * ch.speed;
+  if (o.ankType === 'stumble') v *= 0.75 + 0.25 * Math.abs(ch.step);           // cada passada dá um tranco
+  const k = 1 - Math.exp(-14 * dt);
+  o.vx += ((o.ankDX || 0) * v - o.vx) * k;
+  o.vy += ((o.ankDY || 0) * v - o.vy) * k;
   o.x = cl(o.x + o.vx * dt, 22, W - 22);
   o.y = cl(o.y + o.vy * dt, 22, H - 22);
   o.sp = Math.hypot(o.vx, o.vy); o.mv = o.sp > 8 ? 1 : 0;
@@ -6190,7 +6229,7 @@ const DRIB_GRADE = {
   good:    { label: 'BOM',           rate: 1.00, cost: 1.00, open: 1.00, shake: 0.14 },
   late:    { label: 'FORA DO RITMO', rate: 0.82, cost: 1.30, open: 1.50, shake: 0 }
 };
-const DRIB_PERFECT_S = 0.07, DRIB_GOOD_S = 0.15;   // distância (em segundos) até a bola chegar na mão (proporcional ao ritmo mais lento da postura)
+const DRIB_PERFECT_S = 0.091, DRIB_GOOD_S = 0.195; // distância (em segundos) até a bola chegar na mão (janelas 30% maiores)
 const CANCEL_AT = 0.6;          // progresso a partir do qual o drible pode ser cancelado pelo próximo
 const COMBO_WINDOW = 0.4;       // tempo após o fim de um drible para o próximo ainda contar no combo
 const DRIB_BUFFER = 0.3;        // comando dado cedo demais fica guardado por este tempo
@@ -6223,10 +6262,46 @@ const MOVE_CURVE_SPEC = {
           lat: [[0, 0.3], [1, 0.28, 'linear']],
           fwd: [[0, 0.7], [0.12, 0.7, 'linear'], [0.14, -0.92, 'easeOutExpo'], [1, -0.92, 'linear']] }
 };
-// queda do ankle breaker (roll = tomba de lado, pitch = joga o tronco): tropeça, cai, fica no chão e levanta
-const ANKLE_CURVE_SPEC = {
-  roll:  [[0, 0], [0.1, 0.32, 'easeOutQuad'], [0.26, 1.3, 'easeInQuad'], [0.31, 1.16, 'easeOutQuad'], [0.72, 1.16, 'linear'], [1, 0, 'easeInOutSine']],
-  pitch: [[0, 0], [0.1, -0.16, 'easeOutQuad'], [0.26, 0.14, 'easeInQuad'], [0.72, 0.1, 'linear'], [1, 0, 'easeInOutSine']]
+// ANKLE BREAKER: 3 níveis de gravidade, cada um com fases intermediárias (escorregão -> joelhos cedendo ->
+// braços compensando -> tronco inclinando -> impacto/recuperação). Canais (progresso 0..1 da reação):
+//   lean   = tombo do corpo inteiro para o lado da queda (rad)      comp  = tronco: <0 contra a queda (compensando), >0 acompanhando
+//   crouch = joelhos/quadril cedendo (0 em pé .. 1 sentado)        swing = pé que perdeu a base escorrega para o lado da queda
+//   step   = passo em falso (+ perna de apoio, - perna livre)      arms  = braços se debatendo no ar
+//   reach  = mão/joelho buscando o chão para amortecer            speed = deslizamento na direção da queda (root motion)
+const ANKLE_VARIANTS = {
+  // QUEDA TOTAL: perde a base, tenta um passo em falso e cai sentado/de lado; levanta devagar
+  fall: { dur: 1.8, label: 'ANKLE BREAKER!', spec: {
+    lean:   [[0, 0], [0.07, 0.16, 'easeOutQuad'], [0.17, 0.42, 'easeInOutSine'], [0.27, 1.22, 'easeInQuad'], [0.31, 1.1, 'easeOutQuad'], [0.7, 1.12, 'linear'], [0.86, 0.35, 'easeInOutSine'], [1, 0, 'easeOutQuad']],
+    comp:   [[0, 0], [0.08, -0.32, 'easeOutQuad'], [0.18, -0.2, 'linear'], [0.27, 0.25, 'easeInQuad'], [0.7, 0.18, 'linear'], [1, 0, 'easeInOutSine']],
+    crouch: [[0, 0], [0.08, 0.22, 'easeOutQuad'], [0.18, 0.32, 'linear'], [0.28, 0.9, 'easeInQuad'], [0.72, 0.85, 'linear'], [0.88, 0.45, 'easeInOutSine'], [1, 0, 'easeOutQuad']],
+    swing:  [[0, 0], [0.07, 1, 'easeOutExpo'], [0.18, 0.6, 'linear'], [0.3, 0.9, 'easeInQuad'], [0.72, 0.6, 'linear'], [1, 0, 'easeInOutSine']],
+    step:   [[0, 0], [0.09, 0, 'linear'], [0.17, -1, 'easeOutQuad'], [0.25, -0.3, 'easeInQuad'], [0.75, 0, 'linear'], [1, 0, 'linear']],
+    arms:   [[0, 0], [0.07, 0.8, 'easeOutQuad'], [0.2, 1, 'linear'], [0.28, 0.35, 'easeInQuad'], [0.72, 0.2, 'linear'], [1, 0, 'easeInOutSine']],
+    reach:  [[0, 0], [0.2, 0, 'linear'], [0.28, 0.85, 'easeOutQuad'], [0.6, 0.5, 'linear'], [0.8, 0.9, 'easeInOutSine'], [1, 0, 'easeInQuad']],
+    speed:  [[0, 1], [0.08, 1.1, 'easeOutQuad'], [0.2, 0.8, 'linear'], [0.3, 0.12, 'easeOutQuad'], [0.34, 0, 'linear'], [1, 0, 'linear']]
+  } },
+  // QUEDA PARCIAL COM APOIO: desequilibra, toca joelho/mão no chão e se impulsiona de volta para a defesa
+  catch: { dur: 1.25, label: 'QUEBROU O MARCADOR!', spec: {
+    lean:   [[0, 0], [0.1, 0.2, 'easeOutQuad'], [0.34, 0.68, 'easeInQuad'], [0.5, 0.62, 'linear'], [0.68, 0.12, 'easeOutCubic'], [1, 0, 'easeInOutSine']],
+    comp:   [[0, 0], [0.1, -0.35, 'easeOutQuad'], [0.34, 0.1, 'easeInQuad'], [0.55, 0.05, 'linear'], [1, 0, 'easeInOutSine']],
+    crouch: [[0, 0], [0.1, 0.25, 'easeOutQuad'], [0.34, 0.82, 'easeInQuad'], [0.52, 0.78, 'linear'], [0.72, 0.42, 'easeOutCubic'], [1, 0.12, 'easeInOutSine']],
+    swing:  [[0, 0], [0.1, 1, 'easeOutExpo'], [0.34, 0.55, 'easeInQuad'], [0.6, 0.2, 'linear'], [1, 0, 'linear']],
+    step:   [[0, 0], [0.12, 0, 'linear'], [0.3, -0.7, 'easeOutQuad'], [0.55, -0.4, 'linear'], [0.75, 0, 'easeInOutSine'], [1, 0, 'linear']],
+    arms:   [[0, 0], [0.1, 0.85, 'easeOutQuad'], [0.3, 0.4, 'linear'], [0.6, 0.15, 'linear'], [1, 0, 'linear']],
+    reach:  [[0, 0], [0.18, 0.3, 'easeOutQuad'], [0.34, 1, 'easeInQuad'], [0.52, 1, 'linear'], [0.68, 0.1, 'easeOutCubic'], [1, 0, 'linear']],
+    speed:  [[0, 1], [0.12, 0.9, 'linear'], [0.34, 0.2, 'easeOutQuad'], [0.5, 0, 'linear'], [0.6, -0.45, 'easeOutQuad'], [0.76, 0, 'easeInQuad'], [1, 0, 'linear']]
+  } },
+  // DESEQUILÍBRIO SEM QUEDA: 2–3 passos largos e desajeitados para frear o corpo; não toca o chão
+  stumble: { dur: 0.95, label: 'DESEQUILIBROU!', spec: {
+    lean:   [[0, 0], [0.12, 0.38, 'easeOutQuad'], [0.3, 0.46, 'linear'], [0.55, 0.22, 'easeInOutSine'], [0.82, 0.05, 'easeOutQuad'], [1, 0, 'linear']],
+    comp:   [[0, 0], [0.1, -0.38, 'easeOutQuad'], [0.45, -0.2, 'linear'], [0.8, 0, 'easeInOutSine'], [1, 0, 'linear']],
+    crouch: [[0, 0], [0.12, 0.28, 'easeOutQuad'], [0.55, 0.32, 'linear'], [1, 0.1, 'easeInOutSine']],
+    swing:  [[0, 0], [0.08, 0.8, 'easeOutExpo'], [0.2, 0.2, 'linear'], [1, 0, 'linear']],
+    step:   [[0, 0], [0.13, -1, 'easeOutQuad'], [0.29, 1, 'easeInOutSine'], [0.46, -0.85, 'easeInOutSine'], [0.62, 0.45, 'easeInOutSine'], [0.78, 0, 'easeOutQuad'], [1, 0, 'linear']],
+    arms:   [[0, 0], [0.1, 1, 'easeOutQuad'], [0.45, 0.75, 'linear'], [0.75, 0.2, 'easeInOutSine'], [1, 0, 'linear']],
+    reach:  [[0, 0], [1, 0, 'linear']],
+    speed:  [[0, 1.15], [0.15, 1.0, 'linear'], [0.3, 0.85, 'linear'], [0.46, 0.65, 'linear'], [0.62, 0.38, 'linear'], [0.78, 0.08, 'easeOutQuad'], [1, 0, 'linear']]
+  } }
 };
 // Cada curva vira uma timeline anime.js pausada sobre um objeto simples; seek() posiciona no progresso pedido
 function makeCurve(spec) {
@@ -6244,8 +6319,8 @@ function makeCurve(spec) {
 }
 const MOVE_CURVES = {};
 for (const kind in MOVE_CURVE_SPEC) MOVE_CURVES[kind] = makeCurve(MOVE_CURVE_SPEC[kind]);
-const ANKLE_CURVE = makeCurve(ANKLE_CURVE_SPEC);
-const _mvOut = { spd: 0, lat: 0, fwd: 0 }, _ankOut = { roll: 0, pitch: 0 };
+for (const v in ANKLE_VARIANTS) ANKLE_VARIANTS[v].curve = makeCurve(ANKLE_VARIANTS[v].spec);
+const _mvOut = { spd: 0, lat: 0, fwd: 0 }, _ankOut = { lean: 0, comp: 0, crouch: 0, swing: 0, step: 0, arms: 0, reach: 0, speed: 0 };
 // reserva sem anime.js (CDN fora do ar): interpola as mesmas chaves com easings equivalentes
 const _ease = {
   linear: t => t, easeOutQuad: t => 1 - (1 - t) * (1 - t), easeInQuad: t => t * t,
@@ -6269,7 +6344,11 @@ function sampleCurve(c, p, out) {
   return out;
 }
 const moveCurve = (kind, p) => sampleCurve(MOVE_CURVES[kind], p, _mvOut);
-const ankleCurve = p => sampleCurve(ANKLE_CURVE, p, _ankOut);
+// canais da reação de ankle breaker no instante atual (progresso pelo tempo restante da própria variante)
+function ankleChannels(o) {
+  const v = ANKLE_VARIANTS[o.ankType] || ANKLE_VARIANTS.fall;
+  return sampleCurve(v.curve, 1 - o.ankle / (o.ankDur || v.dur), _ankOut);
+}
 
 // Root motion de qualquer drible: (fx,fy) = "frente" (câmera do jogador / alvo da CPU), (ix,iy) = direção comandada
 function moveLocomotion(o, dt, fx, fy, ix, iy) {
@@ -6407,8 +6486,15 @@ function cpuDribble(E, M, pl) {
 }
 
 // HUD do ritmo (por quadro, só visual). No convidado lê os campos que chegam no snapshot.
-const dribHud = { el: $('drib-hud'), mark: $('drib-mark'), good: document.querySelector('#drib-meter .z-good'),
-  perfect: document.querySelector('#drib-meter .z-perfect'), pop: $('drib-pop'), combo: $('drib-combo'), seq: 0, comboShown: 0 };
+const dribHud = { el: $('drib-hud'), svg: $('drib-meter'), mark: $('drib-mark'), bg: document.querySelector('#drib-meter .arc-bg'),
+  good: document.querySelector('#drib-meter .arc-good'), perfect: document.querySelector('#drib-meter .arc-perfect'),
+  pop: $('drib-pop'), combo: $('drib-combo'), seq: 0, comboShown: 0, sx: 0, sy: 0, shown: false };
+// Arco do medidor (viewBox 70x150): centro à esquerda, raio 58, de -60° (topo) a +60° (base), aberto para a direita
+const ARC_CX = 4, ARC_CY = 75, ARC_R = 58, ARC_SPAN = 60;
+const arcPt = deg => { const a = deg * Math.PI / 180; return [ARC_CX + ARC_R * Math.cos(a), ARC_CY + ARC_R * Math.sin(a)]; };
+const arcPath = (d0, d1) => { const [x0, y0] = arcPt(d0), [x1, y1] = arcPt(d1); return `M${x0.toFixed(2)} ${y0.toFixed(2)}A${ARC_R} ${ARC_R} 0 0 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`; };
+dribHud.bg.setAttribute('d', arcPath(-ARC_SPAN, ARC_SPAN));
+const _arcR = new THREE.Vector3(), _arcP = new THREE.Vector3();
 function dribPop(el, text, cls) {
   el.textContent = text;
   el.className = cls || '';
@@ -6424,12 +6510,26 @@ function dribHudTick() {
   const show = holding && (P.dr || activeMove(P) || P.combo > 1);
   H.el.classList.toggle('on', !!show);
   if (show) {
-    // marca: -0.5..0.5 da fase em volta da mão (centro); zonas em segundos convertidas pela frequência atual
+    // fase em volta da mão: -0.5..0.5 vira o ângulo no arco (base -> centro = bola na mão -> topo);
+    // as zonas são janelas em segundos convertidas pela frequência atual do drible
     const f = P.dribFreq || 1.6, c = (((P.bp || 0) % 1) + 1) % 1, off = c > 0.5 ? c - 1 : c;
-    H.mark.style.left = (50 + off * 100) + '%';
-    H.good.style.width = Math.min(100, DRIB_GOOD_S * f * 200) + '%';
-    H.perfect.style.width = Math.min(100, DRIB_PERFECT_S * f * 200) + '%';
+    const degPerPhase = ARC_SPAN * 2;
+    const gHalf = Math.min(ARC_SPAN, DRIB_GOOD_S * f * degPerPhase), pHalf = Math.min(ARC_SPAN, DRIB_PERFECT_S * f * degPerPhase);
+    H.good.setAttribute('d', arcPath(-gHalf, gHalf));
+    H.perfect.setAttribute('d', arcPath(-pHalf, pHalf));
+    const md = -off * degPerPhase, [mx, my] = arcPt(md);
+    H.mark.setAttribute('cx', mx.toFixed(2)); H.mark.setAttribute('cy', my.toFixed(2));
+    H.mark.classList.toggle('in-perfect', Math.abs(md) <= pHalf);
+    // flutua ao lado do jogador: ponto à altura do tronco deslocado para a direita da câmera, seguido com suavização
+    _arcR.setFromMatrixColumn(cam.matrixWorld, 0);
+    _arcP.set(P.x * s, 1.15, P.y * s).addScaledVector(_arcR, 0.55).project(cam);
+    const tx = (_arcP.x + 1) / 2 * innerWidth, ty = (1 - _arcP.y) / 2 * innerHeight;
+    if (!H.shown) { H.sx = tx; H.sy = ty; }
+    H.sx += (tx - H.sx) * 0.35; H.sy += (ty - H.sy) * 0.35;
+    const half = (H.svg.clientHeight || 150) / 2, ks = half / 75;   // escala do svg (menor no celular)
+    H.el.style.transform = `translate(${(H.sx - ARC_CX * ks).toFixed(1)}px, ${(H.sy - half).toFixed(1)}px)`;
   }
+  H.shown = !!show;
   if ((P.mvSeq || 0) !== H.seq) {
     const fresh = H.seq !== 0 || P.mvSeq === 1;
     H.seq = P.mvSeq || 0;
@@ -6475,20 +6575,25 @@ function boteHudTick() {
 }
 let ankleRing = null;
 function ankleFx(o) {
-  camShake = Math.max(camShake, 0.7);
+  const V = ANKLE_VARIANTS[o.ankType] || ANKLE_VARIANTS.fall, sev = o.ankType === 'fall' ? 1 : o.ankType === 'catch' ? 0.7 : 0.45;
+  camShake = Math.max(camShake, 0.7 * sev);
   const H = boteHud, p = toScreen(o, 2.1);
+  H.fx.textContent = V.label;
+  H.fx.style.fontSize = Math.round(22 + 12 * sev) + 'px';
   H.fx.style.left = p.x + 'px'; H.fx.style.top = p.y + 'px';
   // anel de poeira no chão onde o defensor caiu
   if (!ankleRing) {
     ankleRing = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.75, 40), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
     ankleRing.rotation.x = -Math.PI / 2; ankleRing.userData.noShadow = true; sc.add(ankleRing);
   }
-  ankleRing.position.set(o.x * s, 0.03, o.y * s);
-  const st = { r: 0.4, a: 0.85 };
+  // poeira onde o corpo encosta no chão (queda e apoio); no desequilíbrio só um rastro leve do pé
+  ankleRing.position.set((o.x + (o.ankDX || 0) * 14) * s, 0.03, (o.y + (o.ankDY || 0) * 14) * s);
+  const peak = o.ankType === 'stumble' ? 0.35 : 0.85, st = { r: 0.4, a: 0 };
+  const impactMs = o.ankType === 'fall' ? 480 : o.ankType === 'catch' ? 420 : 0;   // a poeira sobe quando o corpo/mão toca o chão
   const draw = () => { ankleRing.scale.setScalar(st.r); ankleRing.material.opacity = st.a; };
   if (typeof anime === 'undefined') { H.fx.style.opacity = 1; setTimeout(() => { H.fx.style.opacity = 0; }, 1100); return; }
   anime.remove([H.fx, st]);
-  anime({ targets: st, r: 2.2, a: 0, duration: 650, easing: 'easeOutExpo', update: draw });
+  anime({ targets: st, r: [0.4, 2.2], a: [peak, 0], duration: 650, delay: impactMs, easing: 'easeOutExpo', update: draw });
   anime({ targets: H.fx, opacity: [{ value: 1, duration: 80 }, { value: 0, duration: 450, delay: 750, easing: 'easeInQuad' }],
     scale: [{ value: [1.8, 1], duration: 380, easing: 'easeOutBack' }], translateY: [{ value: [10, -26], duration: 1280, easing: 'easeOutExpo' }],
     rotate: [{ value: [-6, 0], duration: 380, easing: 'easeOutBack' }] });
@@ -7482,6 +7587,7 @@ function lockCelebrationAimAtCamera(m, headOnly = false) {
 }
 
 function syncBiomechanics(o, m, dt, t) {
+  o._m = m;   // o ankle breaker lê pés e pelve deste modelo no instante do corte
   const me = o === P;
   if (me && wardrobeOpen) {
     m.position.set(o.x * s, 0, o.y * s);
@@ -7535,6 +7641,7 @@ function syncBiomechanics(o, m, dt, t) {
     const curr = z[key] === undefined ? target : z[key];
     return (z[key] = damp(curr, target, speed, dt));
   };
+  const ak = o.ankle > 0 ? Object.assign({}, ankleChannels(o)) : null;   // reação de ankle breaker (canais anime.js)
 
   const isGathering = hasB && me && charge;
   const isShooting = o.lock > 0 && o.dunk <= 0 && o.layup <= 0 && o.block <= 0;
@@ -7685,11 +7792,11 @@ function syncBiomechanics(o, m, dt, t) {
       : (o.dunkType === 6 ? Math.PI * Math.sin(Math.PI * cl((1 - o.dunk / 0.96 - 0.16) / 0.70, 0, 1)) : 0))
     : (o.layup > 0 && o.layupType === 6 ? 1.35 * Math.sin(Math.PI * cl((1 - o.layup / 0.78 - 0.1) / 0.8, 0, 1)) : 0);
   m.rotation.y = o.ry + (o.spin > 0 ? smoothstep(spp) * Math.PI * 2 * o.hand : 0) + reverseYaw + extraYaw;
-  // ANKLE BREAKER: tropeça, tomba de lado e levanta (curva anime.js amostrada pelo progresso da queda)
-  if (o.ankle > 0) {
-    const ak = ankleCurve(1 - o.ankle / ANKLE_DUR);
-    m.rotation.z = ak.roll * (o.ankleDir || 1);
-    m.rotation.x = ak.pitch;
+  // ANKLE BREAKER (corpo inteiro): tomba na direção da queda, decomposta em frente/lado do próprio corpo
+  if (ak) {
+    if (m.rotation.order !== 'YXZ') m.rotation.order = 'YXZ';      // inclinação local, aplicada depois do giro
+    m.rotation.x = ak.lean * (o.ankFwd || 0);
+    m.rotation.z = ak.lean * (o.ankSide || 0);
   } else if (m.rotation.z || m.rotation.x) { m.rotation.z = 0; m.rotation.x = 0; }
 
   const pelvis = m.pelvis, waist = m.waist, ch = m.ch, neck = m.neck, hd = m.hd;
@@ -7819,6 +7926,11 @@ function syncBiomechanics(o, m, dt, t) {
   ch.rotation.x = T('chtRx', targetChestRx * 0.55, 15);
   ch.rotation.y = T('chtRy', targetChestRy * 0.55 + stealTw, 15 + 22 * runK + (o.steal > 0 ? 20 : 0));
   ch.rotation.z = T('chtRz', (o.sd > 0 ? sds * 0.14 * o.sdir : (isCelebrating ? -0.04 : -turnVel * 0.06 * amp)), 15);
+  if (ak) {   // ANKLE BREAKER (tronco): primeiro inclina contra a queda tentando compensar, no impacto acompanha
+    const cx = ak.comp * (o.ankFwd || 0), cz = ak.comp * (o.ankSide || 0);
+    waist.rotation.x += cx * 0.5; ch.rotation.x += cx * 0.7;
+    waist.rotation.z += cz * 0.5; ch.rotation.z += cz * 0.7;
+  }
 
   const totalSpineRx = pelvis.rotation.x + waist.rotation.x + ch.rotation.x;
   const totalSpineRy = pelvis.rotation.y + waist.rotation.y + ch.rotation.y;
@@ -8043,6 +8155,22 @@ function syncBiomechanics(o, m, dt, t) {
     hipL_z += 0.03 * gndW; hipR_z -= 0.03 * gndW;
   }
   // resposta mais rápida na corrida para a perna acompanhar o ciclo sem perder amplitude nem atrasar
+  // ANKLE BREAKER (pernas): o pé que perdeu a base escorrega/trava para o lado da queda, o joelho de apoio cede,
+  // passos em falso na direção da queda e, na queda total, os joelhos dobram até sentar
+  if (ak) {
+    const sd = o.ankSide || 0, fw = o.ankFwd || 0, pivR = (o.ankPivot || 1) > 0;
+    const L = { hx: hipL_x, hz: hipL_z, k: kneeL_x }, Rg = { hx: hipR_x, hz: hipR_z, k: kneeR_x };
+    const piv = pivR ? Rg : L, free = pivR ? L : Rg;
+    for (const g of [L, Rg]) { g.hx += -1.2 * ak.crouch; g.k += 2.0 * ak.crouch; }
+    const sw = ak.swing;
+    free.hz -= 0.55 * sw * sd; free.hx += -0.6 * sw * fw; free.k = lerp(free.k, 0.12, 0.6 * sw);
+    piv.k += 0.45 * sw;
+    const st = ak.step, sl = st > 0 ? piv : free, a = Math.abs(st);
+    sl.hx += -0.85 * a * fw - 0.35 * a; sl.hz -= 0.5 * a * sd; sl.k += 0.8 * a;
+    hipL_x = L.hx; hipL_z = L.hz; kneeL_x = L.k; hipR_x = Rg.hx; hipR_z = Rg.hz; kneeR_x = Rg.k;
+    ankleL_x = -hipL_x * 0.55 - kneeL_x * 0.42 - pelvis.rotation.x * 0.5;
+    ankleR_x = -hipR_x * 0.55 - kneeR_x * 0.42 - pelvis.rotation.x * 0.5;
+  }
   const legSp = 18 + 32 * runK;
   m.tL.rotation.set(T('hipLx', hipL_x, legSp), T('hipLy', hipL_y, 16 + 14 * runK), T('hipLz', hipL_z, 16 + 14 * runK));
   m.tR.rotation.set(T('hipRx', hipR_x, legSp), T('hipRy', hipR_y, 16 + 14 * runK), T('hipRz', hipR_z, 16 + 14 * runK));
@@ -8622,6 +8750,19 @@ function syncBiomechanics(o, m, dt, t) {
     wL_x = cl(wL_x, -0.34, 0.28); wR_x = cl(wR_x, -0.34, 0.28);
     wL_y = cl(wL_y, -0.28, 0.28); wR_y = cl(wR_y, -0.28, 0.28);
   }
+  // ANKLE BREAKER: braços se debatem tentando achar o equilíbrio; na queda/apoio a mão do lado da queda busca o chão
+  if (ak) {
+    const fl = ak.arms, wb = Math.sin(t * 13), wb2 = Math.sin(t * 11 + 1.3);
+    aL_z = lerp(aL_z, 1.15 + 0.25 * wb, fl);  aR_z = lerp(aR_z, -1.15 - 0.25 * wb2, fl);
+    aL_x = lerp(aL_x, -0.55 - 0.35 * wb2, fl); aR_x = lerp(aR_x, -0.55 - 0.35 * wb, fl);
+    eL_x = lerp(eL_x, 0.25, fl); eR_x = lerp(eR_x, 0.25, fl);
+    const rc = ak.reach;
+    if (rc > 0.001) {
+      const ax = (o.ankFwd || 0) >= -0.3 ? -0.6 : 0.55;              // amortece à frente/ao lado, ou atrás ao cair de costas
+      if ((o.ankSide || 0) >= 0) { aR_x = lerp(aR_x, ax, rc); aR_z = lerp(aR_z, -0.55, rc); eR_x = lerp(eR_x, 0.15, rc); }
+      else { aL_x = lerp(aL_x, ax, rc); aL_z = lerp(aL_z, 0.55, rc); eL_x = lerp(eL_x, 0.15, rc); }
+    }
+  }
   m.aL.rotation.set(T('shdLx', aL_x, 18 + 26 * runK), T('shdLy', aL_y, 16 + 16 * runK), T('shdLz', aL_z, 16 + 16 * runK));
   m.aR.rotation.set(T('shdRx', aR_x, 18 + 26 * runK), T('shdRy', aR_y, 16 + 16 * runK), T('shdRz', aR_z, 16 + 16 * runK));
 
@@ -9074,7 +9215,7 @@ function drawVerticalShotMeter(x, y, progress) {
 }
 
 const camPosSmooth = new THREE.Vector3(HX * s, 2.8, (420 + 180) * s);
-let camAct = 0, camShake = 0, camPrevPy = 0, camBallLock = false;
+let camAct = 0, camShake = 0, camPrevPy = 0, camBallLock = false, camStance = 0;   // camStance: 0..1 zoom da postura (C)
 function toggleCamLock() {                       // câmera fixa na bola (tecla L / botão de câmera no celular)
   camBallLock = !camBallLock;
   document.querySelectorAll('.tb-cam').forEach(b => b.classList.toggle('lock', camBallLock));
@@ -9244,7 +9385,10 @@ function render(dt, t) {
   const isPlayerCelebNow = P.celeb > 0 && P.lock <= 0.18;
   // FOV do jogador: horizontal em 16:9 (90° ≈ 58.7° vertical, o enquadramento original); os efeitos de corrida/enterrada escalam a partir dele
   const userVFov = 2 * Math.atan(Math.tan(clampSetting('fov', GSET.cam.fov) * Math.PI / 360) / (16 / 9)) * 180 / Math.PI;
-  const targetFov = inStartMenu ? 50 : userVFov / 58 * (P.dunk > 0 ? 65 : (isPlayerCelebNow ? 48 : (charge ? 55 : (P.state === STATES.SPRINT ? 62 : 58))));
+  // POSTURA (C, com ou sem bola): zoom suave para dar foco; ao soltar volta suave para a distância normal
+  const inStance = !inStartMenu && !isPlayerCelebNow && P.dunk <= 0 && P.layup <= 0 && (P.dr || P.dd) ? 1 : 0;
+  camStance = damp(camStance, inStance, 6, dt);
+  const targetFov = inStartMenu ? 50 : (1 - 0.07 * camStance) * userVFov / 58 * (P.dunk > 0 ? 65 : (isPlayerCelebNow ? 48 : (charge ? 55 : (P.state === STATES.SPRINT ? 62 : 58))));
   if (Math.abs(cam.fov - targetFov) > 0.05) {
     cam.fov = damp(cam.fov, targetFov, 8, dt);
     cam.updateProjectionMatrix();
@@ -9292,7 +9436,8 @@ function render(dt, t) {
     const dunkP = P.dunk > 0 ? 1 - P.dunk / 0.96 : 0;
     camAct = damp(camAct, (P.dunk > 0 || P.layup > 0) ? 1 : 0, 5, dt);       // 0..1: câmera "de ação" na enterrada/bandeja
     const camDist = (isPlayerCelebNow ? 3.8 : 6.2 + 0.9 * spd + 0.7 * camAct - (charge ? 0.5 : 0))   // afasta correndo/enterrando, aproxima ao arremessar
-                    * clampSetting('dist', GSET.cam.dist) / GSET_DEF.cam.dist;                     // distância escolhida nas configurações
+                    * clampSetting('dist', GSET.cam.dist) / GSET_DEF.cam.dist                      // distância escolhida nas configurações
+                    * (1 - 0.16 * camStance);                                                       // aproxima na postura (C)
     const lookAhead = isPlayerCelebNow ? 0.0 : 2.6;
     const camBaseY = isPlayerCelebNow ? 1.46 : 1.64 + 0.30 * camAct;
     const shoulder = isPlayerCelebNow ? 0 : 0.38 * (1 - 0.6 * camAct);       // câmera levemente por cima do ombro: mostra mais quadra
