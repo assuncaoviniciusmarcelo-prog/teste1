@@ -221,6 +221,29 @@ canvas {
   box-shadow: 0 0 12px rgba(255,77,109,0.8);
 }
 #stamina-container.exhausted { border-color: rgba(255,80,80,0.8); animation: pulseExhausted 0.6s infinite alternate; }
+
+/* Ritmo do drible: a marca corre pela barra; centro = bola chegando na mão */
+#drib-hud {
+  position: fixed; left: 50%; bottom: 122px; transform: translateX(-50%); z-index: 20; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: 6px; opacity: 0; transition: opacity .18s ease;
+  background: none; border: 0; box-shadow: none; padding: 0;
+}
+#drib-hud::before { display: none; }
+#drib-hud.on { opacity: 1; }
+#drib-meter {
+  position: relative; width: 190px; height: 8px; border-radius: 99px; overflow: hidden;
+  background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.28);
+}
+#drib-meter i { position: absolute; top: 0; bottom: 0; left: 50%; transform: translateX(-50%); }
+#drib-meter .z-good { background: rgba(255,255,255,.22); }
+#drib-meter .z-perfect { background: #3ecf8e; box-shadow: 0 0 8px rgba(62,207,142,.8); }
+#drib-mark { position: absolute; top: -2px; bottom: -2px; width: 3px; margin-left: -1.5px; border-radius: 2px; background: #fff; box-shadow: 0 0 6px #fff; }
+#drib-pop, #drib-combo { font: 700 13px var(--font); letter-spacing: .14em; text-transform: uppercase; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.9); opacity: 0; white-space: nowrap; }
+#drib-pop.perfect { color: #3ecf8e; }
+#drib-pop.late { color: #ff6b81; }
+#drib-combo { font-size: 15px; color: #ffd2a0; }
+body.mobile #drib-hud { bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) scale(.8); }
+body.in-menu #drib-hud { display: none; }
 @keyframes pulseExhausted {
   from { box-shadow: var(--shadow), 0 0 8px rgba(255,80,80,0.35); }
   to   { box-shadow: var(--shadow), 0 0 24px rgba(255,80,80,0.9); }
@@ -1013,6 +1036,13 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
   </div>
 </div>
 
+<!-- RITMO DO DRIBLE / COMBO -->
+<div class="hud" id="drib-hud" aria-hidden="true">
+  <div id="drib-pop"></div>
+  <div id="drib-meter"><i class="z-good"></i><i class="z-perfect"></i><b id="drib-mark"></b></div>
+  <div id="drib-combo"></div>
+</div>
+
 <!-- MEDIDOR DE ARREMESSO -->
 <canvas id="shot-meter-canvas"></canvas>
 
@@ -1113,6 +1143,7 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
 <script>if (typeof Peer === 'undefined') document.write('<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"><\/script>');</script>
 <button id="daynight-btn" aria-label="Alternar dia e noite" title="Modo dia — clique para a noite"><svg class="sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.6"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2.2v2.6M12 19.2v2.6M2.2 12h2.6M19.2 12h2.6M5.1 5.1l1.8 1.8M17.1 17.1l1.8 1.8M5.1 18.9l1.8-1.8M17.1 6.9l1.8-1.8"/></g></svg><svg class="moon" viewBox="0 0 24 24"><path d="M20.3 14.6A8.6 8.6 0 0 1 9.4 3.7a.6.6 0 0 0-.8-.7A9.6 9.6 0 1 0 21 15.4a.6.6 0 0 0-.7-.8z"/></svg></button>
 <div id="vhs-osd"><span class="rec">&#9654;</span> PLAY<small>SP &nbsp;<span id="vhs-cnt">0:00:00</span></small><small>V = VHS ON/OFF</small></div>
@@ -6025,7 +6056,11 @@ addEventListener('mousemove', e => {
 addEventListener('blur', () => { for (const k in K) K[k] = false; pend = 0; pendR = 0; });
 
 let pend = 0, pendR = 0;   // pend = jogador local, pendR = jogador remoto (convidado) no anfitrião
-function sMove() { if (NET.swapped) { if (!pendR) pendR = performance.now() + 60; } else if (!pend) pend = performance.now() + 60; }
+// o timing é medido no APERTO (antes da espera de 60 ms que junta W+A/D num só comando)
+function sMove() {
+  P.pressErr = dribbleTimingErr(P);
+  if (NET.swapped) { if (!pendR) pendR = performance.now() + 60; } else if (!pend) pend = performance.now() + 60;
+}
 
 function canExecuteDribble(o, cost) {
   if (o.exhausted || o.stamina < cost) {
@@ -6034,70 +6069,264 @@ function canExecuteDribble(o, cost) {
   return true;
 }
 
+/* ============================================================================
+   DRIBLE AVANÇADO: ritmo, combos/cancelamentos e curvas de movimento (anime.js)
+   - RITMO: o drible sai melhor quando é comandado com a bola subindo para a mão
+     (fase 0 de o.bp). PERFEITO = mais rápido, mais barato e com a bola protegida;
+     FORA DO RITMO = lento, caro e exposto ao roubo.
+   - COMBOS: na parte final de um drible (CANCEL_AT) o próximo pode cancelar o atual;
+     comando antes disso fica guardado. Encadear acelera e barateia; repetir o mesmo
+     drible é previsível e piora a nota.
+   - As timelines do anime.js NÃO tocam sozinhas: são amostradas com seek() no tempo
+     do passo fixo da física, então replay e online continuam determinísticos.
+   ============================================================================ */
+const DRIB_KINDS = ['cx', 'bb', 'sb', 'sd', 'spin'];
+const MOVE_TIMER = { cx: CX_DUR, bb: BB_DUR, sb: SB_DUR, sd: SD_DUR, spin: SPIN_DUR };
+const MOVE_COST = { cx: 8, bb: 9, sb: 10, sd: 8, spin: 11 };
+const MOVE_OPEN = { cx: 0.9, bb: 0.9, sb: 1.45, sd: 0.85, spin: 1.0 };
+const MOVE_NAME = { cx: 'Crossover', bb: 'Entre as pernas', sb: 'Step-back', sd: 'Drible lateral', spin: 'Giro' };
+const DRIB_GRADE = {
+  perfect: { label: 'PERFEITO',      rate: 1.22, cost: 0.65, open: 0.55, shake: 0.34 },
+  good:    { label: 'BOM',           rate: 1.00, cost: 1.00, open: 1.00, shake: 0.14 },
+  late:    { label: 'FORA DO RITMO', rate: 0.82, cost: 1.30, open: 1.50, shake: 0 }
+};
+const DRIB_PERFECT_S = 0.05, DRIB_GOOD_S = 0.11;   // distância (em segundos) até a bola chegar na mão
+const CANCEL_AT = 0.6;          // progresso a partir do qual o drible pode ser cancelado pelo próximo
+const COMBO_WINDOW = 0.4;       // tempo após o fim de um drible para o próximo ainda contar no combo
+const DRIB_BUFFER = 0.3;        // comando dado cedo demais fica guardado por este tempo
+
+function dribbleTimingErr(o) {
+  const c = (((o.bp || 0) % 1) + 1) % 1;
+  return Math.min(c, 1 - c) / (o.dribFreq || 2.25);
+}
+function dribbleGrade(err) { return err <= DRIB_PERFECT_S ? 'perfect' : (err <= DRIB_GOOD_S ? 'good' : 'late'); }
+function activeMove(o) { for (const k of DRIB_KINDS) if (o[k] > 0) return k; return null; }
+function moveProgress(o, k) { return 1 - o[k] / MOVE_TIMER[k]; }
+
+// Curvas normalizadas (0..1) de cada drible: spd = multiplicador de velocidade, lat = força lateral,
+// fwd = força para a frente. Cada chave: [progresso, valor, easing do trecho que termina ali].
+const MOVE_CURVE_SPEC = {
+  cx:   { spd: [[0, 0.62], [0.18, 0.78, 'easeOutQuad'], [0.5, 1.22, 'easeOutCubic'], [1, 0.78, 'easeInOutSine']],
+          lat: [[0, 0.25], [0.32, 1.0, 'easeOutExpo'], [1, 0.4, 'easeInQuad']],
+          fwd: [[0, 0.6], [0.4, 0.35, 'easeOutQuad'], [1, 0.5, 'easeInOutSine']] },
+  bb:   { spd: [[0, 0.6], [0.45, 1.18, 'easeOutCubic'], [1, 0.72, 'easeInOutSine']],
+          lat: [[0, 0.35], [0.4, 0.95, 'easeOutExpo'], [1, 0.5, 'easeInQuad']],
+          fwd: [[0, -0.05], [0.5, -0.2, 'easeOutQuad'], [1, 0.1, 'easeInOutSine']] },
+  sd:   { spd: [[0, 0.55], [0.4, 1.12, 'easeOutCubic'], [1, 0.62, 'easeInOutSine']],
+          lat: [[0, 0.6], [0.35, 0.95, 'easeOutQuad'], [1, 0.7, 'linear']],
+          fwd: [[0, 0], [1, 0, 'linear']] },
+  spin: { spd: [[0, 0.72], [0.5, 1.12, 'easeInOutSine'], [1, 0.82, 'easeInOutSine']],
+          lat: [[0, 0.55], [0.5, 0.45, 'easeInOutSine'], [1, 0.25, 'easeInQuad']],
+          fwd: [[0, 0.8], [0.55, 0.95, 'easeOutQuad'], [1, 0.75, 'linear']] },
+  // step-back: jab curto para a frente (até 0.12), explosão para trás e freada firme
+  sb:   { spd: [[0, 0], [0.06, 0.18, 'easeOutQuad'], [0.12, 0.05, 'easeInQuad'], [0.34, 1.0, 'easeOutCubic'], [0.58, 0.32, 'easeInQuad'], [1, 0, 'easeOutQuad']],
+          lat: [[0, 0.3], [1, 0.28, 'linear']],
+          fwd: [[0, 0.7], [0.12, 0.7, 'linear'], [0.14, -0.92, 'easeOutExpo'], [1, -0.92, 'linear']] }
+};
+const MOVE_CURVES = {};
+const _mvOut = { spd: 0, lat: 0, fwd: 0 };
+(function buildMoveCurves() {
+  for (const kind in MOVE_CURVE_SPEC) {
+    const spec = MOVE_CURVE_SPEC[kind], obj = {}, props = {};
+    for (const prop in spec) {
+      const keys = spec[prop];
+      obj[prop] = keys[0][1];
+      props[prop] = keys.slice(1).map((k, i) => ({ value: k[1], duration: Math.max(1, (k[0] - keys[i][0]) * 1000), easing: k[2] || 'linear' }));
+    }
+    let tl = null;
+    if (typeof anime !== 'undefined') {
+      try { tl = anime.timeline({ autoplay: false }); tl.add({ targets: obj, ...props }); } catch (e) { tl = null; }
+    }
+    MOVE_CURVES[kind] = { spec, obj, tl };
+  }
+})();
+// reserva sem anime.js (CDN fora do ar): interpola as mesmas chaves com easings equivalentes
+const _ease = {
+  linear: t => t, easeOutQuad: t => 1 - (1 - t) * (1 - t), easeInQuad: t => t * t,
+  easeOutCubic: t => 1 - Math.pow(1 - t, 3), easeOutExpo: t => (t >= 1 ? 1 : 1 - Math.pow(2, -10 * t)),
+  easeInOutSine: t => -(Math.cos(Math.PI * t) - 1) / 2
+};
+function moveCurve(kind, p) {
+  const c = MOVE_CURVES[kind];
+  p = cl(p, 0, 1);
+  if (c.tl) {
+    c.tl.seek(p * 1000);
+    for (const k in _mvOut) _mvOut[k] = parseFloat(c.obj[k]) || 0;
+    return _mvOut;
+  }
+  for (const k in _mvOut) {
+    const keys = c.spec[k];
+    let i = 1;
+    while (i < keys.length - 1 && p > keys[i][0]) i++;
+    const a = keys[i - 1], b = keys[i], span = Math.max(1e-6, b[0] - a[0]);
+    _mvOut[k] = lerp(a[1], b[1], (_ease[b[2]] || _ease.linear)(cl((p - a[0]) / span, 0, 1)));
+  }
+  return _mvOut;
+}
+
+// Root motion de qualquer drible: (fx,fy) = "frente" (câmera do jogador / alvo da CPU), (ix,iy) = direção comandada
+function moveLocomotion(o, dt, fx, fy, ix, iy) {
+  const kind = activeMove(o);
+  if (!kind) return false;
+  const p = moveProgress(o, kind), k = moveCurve(kind, p), rate = o.mvRate || 1;
+  let gx, gy, sp, acc = 15;
+  if (kind === 'sb') {
+    // para trás = afastando da cesta, com separação lateral para o lado da nova mão
+    const bx = o.x - HX, by = o.y - HY, bl = Math.hypot(bx, by) || 1;
+    const backX = bx / bl, backY = by / bl, nh = -(o.prevHand || o.hand);
+    const latX = -backY * nh, latY = backX * nh;
+    gx = -backX * k.fwd + latX * k.lat; gy = -backY * k.fwd + latY * k.lat;
+    sp = 310 * k.spd; acc = p < 0.12 ? 24 : 22;
+  } else {
+    const dir = kind === 'cx' ? (o.xd || -o.hand) : kind === 'bb' ? (o.bdir || -o.hand) : kind === 'sd' ? (o.sdir || -o.hand) : o.hand;
+    gx = -fy * dir * k.lat + fx * k.fwd + ix * 0.35;
+    gy = fx * dir * k.lat + fy * k.fwd + iy * 0.35;
+    sp = (kind === 'spin' ? 165 : kind === 'sd' ? 150 : 155) * k.spd;
+  }
+  locomoteEntity(o, gx, gy, sp * rate, dt, acc);
+  return true;
+}
+
+// Termina o drible atual na hora (a troca de mão já está praticamente feita no fim da animação)
+function cancelMove(o, kind) {
+  if (kind !== 'spin') o.hand *= -1;
+  o[kind] = 0;
+}
+
+// Inicia um drible com a nota dada. Devolve false se faltar fôlego.
+function startDribbleMove(o, kind, dir, grade) {
+  const active = activeMove(o);
+  const chained = !!active || (o.comboT || 0) > 0;
+  const repeat = chained && o.lastMove === kind;
+  if (repeat) grade = grade === 'perfect' ? 'good' : 'late';     // o mesmo drible de novo é previsível
+  const combo = chained && grade !== 'late' ? Math.min((o.combo || 1) + 1, 9) : 1;
+  const chain = Math.min(combo - 1, 3);
+  const g = DRIB_GRADE[grade];
+  const cost = MOVE_COST[kind] * g.cost * (1 - 0.1 * chain) * (repeat ? 1.35 : 1);
+  if (!canExecuteDribble(o, cost)) return false;
+  if (active) cancelMove(o, active);
+  drainStamina(o, cost, 0.5);
+
+  o.prevHand = o.hand;
+  if (kind === 'cx') o.xd = dir || -o.hand;
+  else if (kind === 'bb') o.bdir = dir || -o.hand;
+  else if (kind === 'sd') o.sdir = dir || -o.hand;
+  o[kind] = MOVE_TIMER[kind];
+  o.mvRate = g.rate * (1 + 0.06 * chain);
+  o.open = MOVE_OPEN[kind] * g.open;
+  o.mvGrade = grade; o.lastMove = kind; o.combo = combo; o.comboT = 0;
+  o.mvSeq = (o.mvSeq || 0) + 1;                      // o HUD (inclusive do convidado, via snapshot) reage a cada drible novo
+  o.mvBuf = null;
+
+  // bom timing tira o passo do marcador: quanto maior o combo, mais tempo ele fica para trás
+  if (g.shake > 0) {
+    for (const E of oppsOf(o)) {
+      const d = D(o, E);
+      if (d > 95) continue;
+      const human = E === P || (NET.live && E === A);       // em jogador humano o efeito é mais leve
+      const shake = g.shake * (1 + 0.3 * chain) * (human ? 0.5 : 1);
+      E.shook = Math.max(E.shook || 0, shake);
+      const ux = (E.x - o.x) / (d || 1), uy = (E.y - o.y) / (d || 1);
+      E.ragImpulseX = (E.ragImpulseX || 0) - uy * (o.xd || o.hand) * 0.6 * shake + ux * 0.2 * shake;
+      E.ragImpulseY = (E.ragImpulseY || 0) + ux * (o.xd || o.hand) * 0.6 * shake + uy * 0.2 * shake;
+    }
+  }
+  if (typeof audio !== 'undefined') audio.playShoeSqueak(grade === 'perfect' ? 1.0 : 0.85);
+  return true;
+}
+
+// Comando de drible (jogador ou CPU): nota pelo timing; cedo demais no drible atual = fica guardado
+function queueDribbleMove(o, kind, dir, err) {
+  const grade = dribbleGrade(err == null ? dribbleTimingErr(o) : err);
+  const active = activeMove(o);
+  if (active && moveProgress(o, active) < CANCEL_AT) { o.mvBuf = { kind, dir, grade, t: DRIB_BUFFER }; return; }
+  startDribbleMove(o, kind, dir, grade);
+}
+
+// Por passo de física: comando guardado, janela de combo e "passo perdido" do marcador
+function dribbleStep(o, dt, endedNow) {
+  if (endedNow) { o.comboT = COMBO_WINDOW; o.mvRate = 1; }
+  if (o.comboT > 0) { o.comboT = Math.max(0, o.comboT - dt); if (o.comboT <= 0 && !activeMove(o)) o.combo = 0; }
+  if (o.shook > 0) o.shook = Math.max(0, o.shook - dt);
+  const bf = o.mvBuf;
+  if (bf) {
+    bf.t -= dt;
+    const holding = B.s === 'held' && B.owner === o;
+    if (bf.t <= 0 || !holding) o.mvBuf = null;
+    else {
+      const a = activeMove(o);
+      if (!a || moveProgress(o, a) >= CANCEL_AT) startDribbleMove(o, bf.kind, bf.dir, bf.grade);
+    }
+  }
+}
+
 function sResolve() {
   if (NET.swapped) pendR = 0; else pend = 0;
-  if (!stance() || charge || deadT > 0 || over || P.lock > 0 || P.cx > 0 || P.spin > 0 || P.sb > 0 || P.sd > 0 || P.bb > 0) return;
+  if (!stance() || charge || deadT > 0 || over || P.lock > 0) return;
   const w = K.KeyW, sb = K.KeyS, a = K.KeyA, d = K.KeyD;
   const dir = d ? 1 : -1;
   const side = (a || d) && !(a && d);
-
-  if (w && side) {
-    if (!canExecuteDribble(P, 8)) return;
-    drainStamina(P, 8, 0.45);
-    P.prevHand = P.hand;
-    P.xd = dir;
-    P.cx = CX_DUR;
-    P.open = 0.9;
-  } else if (sb && side) {
-    if (!canExecuteDribble(P, 9)) return;
-    drainStamina(P, 9, 0.50);
-    P.prevHand = P.hand;
-    P.bdir = dir;
-    P.bb = BB_DUR;
-    P.open = 0.9;
-  } else if (w && !sb) {
-    if (!canExecuteDribble(P, 11)) return;
-    drainStamina(P, 11, 0.55);
-    P.spin = SPIN_DUR;
-    P.open = 1.0;
-  } else if (sb) {
-    if (!canExecuteDribble(P, 10)) return;
-    drainStamina(P, 10, 0.50);
-    P.prevHand = P.hand;
-    P.sb = SB_DUR;
-    P.open = 1.45;
-  } else if (side) {
-    if (!canExecuteDribble(P, 8)) return;
-    drainStamina(P, 8, 0.45);
-    P.prevHand = P.hand;
-    P.sd = SD_DUR;
-    P.sdir = dir;
-    P.open = 0.85;
-  }
-  if (typeof audio !== 'undefined') audio.playShoeSqueak(0.85);
+  const kind = (w && side) ? 'cx' : (sb && side) ? 'bb' : (w && !sb) ? 'spin' : sb ? 'sb' : side ? 'sd' : null;
+  if (kind) queueDribbleMove(P, kind, kind === 'spin' || kind === 'sb' ? 0 : dir, P.pressErr);
 }
 
 function triggerDribbleMove(k) {
-  if (B.owner !== P || B.s !== 'held' || charge || deadT > 0 || over || P.cx > 0 || P.sb > 0 || P.spin > 0 || P.lock > 0) return;
+  if (B.owner !== P || B.s !== 'held' || charge || deadT > 0 || over || P.lock > 0) return;
   const isStepBackCross = k === 'c' && (K.KeyS || K.ArrowDown) && !(K.KeyW || K.ArrowUp);
-  const cost = isStepBackCross ? 10 : (k === 'c' ? 8 : 11);
-  if (!canExecuteDribble(P, cost)) return;
-  drainStamina(P, cost, 0.50);
-  if (typeof audio !== 'undefined') audio.playShoeSqueak(0.85);
-
-  if (isStepBackCross) {
-    P.prevHand = P.hand;
-    P.sb = SB_DUR;
-    P.open = 1.45;
-  } else if (k === 'c') {
+  if (isStepBackCross) queueDribbleMove(P, 'sb', 0);
+  else if (k === 'c') {
     const rt = (K.KeyD || K.ArrowRight ? 1 : 0) - (K.KeyA || K.ArrowLeft ? 1 : 0);
-    P.prevHand = P.hand;
-    P.xd = rt !== 0 ? rt : -P.hand;
-    P.cx = CX_DUR;
-    P.open = 0.85;
-  } else {
-    P.spin = SPIN_DUR;
-    P.open = 1.0;
+    queueDribbleMove(P, 'cx', rt !== 0 ? rt : -P.hand);
+  } else queueDribbleMove(P, 'spin', 0);
+}
+
+// CPU com a bola: sequências de dribles encadeados no ritmo, com nota sorteada (às vezes erra o tempo)
+const CPU_COMBOS = [['cx'], ['cx', 'bb'], ['cx', 'sb'], ['sd', 'cx'], ['bb', 'cx', 'sb'], ['spin'], ['cx', 'spin'], ['sd', 'bb', 'cx']];
+function cpuDribble(E, M, pl) {
+  if (!E.chain) {
+    if (M && D(E, M) < 76 && !activeMove(E) && R() < 0.02) E.chain = { seq: CPU_COMBOS[(R() * CPU_COMBOS.length) | 0], i: 0, at: 0 };
+    else return;
+  }
+  const ch = E.chain, a = activeMove(E);
+  if (a && moveProgress(E, a) < ch.at) return;      // espera a janela de cancelamento (reação varia a cada drible)
+  const kind = ch.seq[ch.i++], r = R();
+  const grade = r < 0.3 ? 'perfect' : (r < 0.78 ? 'good' : 'late');
+  if (!startDribbleMove(E, kind, kind === 'spin' || kind === 'sb' ? 0 : -E.hand, grade) || ch.i >= ch.seq.length) E.chain = null;
+  else ch.at = CANCEL_AT + R() * 0.3;
+  if (kind === 'sb' && E[kind] > 0) pl.c = 0.25;     // step-back abre espaço para o arremesso
+}
+
+// HUD do ritmo (por quadro, só visual). No convidado lê os campos que chegam no snapshot.
+const dribHud = { el: $('drib-hud'), mark: $('drib-mark'), good: document.querySelector('#drib-meter .z-good'),
+  perfect: document.querySelector('#drib-meter .z-perfect'), pop: $('drib-pop'), combo: $('drib-combo'), seq: 0, comboShown: 0 };
+function dribPop(el, text, cls) {
+  el.textContent = text;
+  el.className = cls || '';
+  if (typeof anime === 'undefined') { el.style.opacity = 1; setTimeout(() => { el.style.opacity = 0; }, 650); return; }
+  anime.remove(el);
+  anime({ targets: el, opacity: [{ value: 1, duration: 60 }, { value: 0, duration: 420, delay: 380, easing: 'easeInQuad' }],
+    scale: [{ value: [1.45, 1], duration: 260, easing: 'easeOutBack' }], translateY: [{ value: [6, -4], duration: 820, easing: 'easeOutExpo' }] });
+}
+function dribHudTick() {
+  const H = dribHud;
+  if (!P || !H.el) return;
+  const holding = !inStartMenu && B.s === 'held' && B.owner === P && !over;
+  const show = holding && (P.dr || activeMove(P) || P.combo > 1);
+  H.el.classList.toggle('on', !!show);
+  if (show) {
+    // marca: -0.5..0.5 da fase em volta da mão (centro); zonas em segundos convertidas pela frequência atual
+    const f = P.dribFreq || 2.25, c = (((P.bp || 0) % 1) + 1) % 1, off = c > 0.5 ? c - 1 : c;
+    H.mark.style.left = (50 + off * 100) + '%';
+    H.good.style.width = Math.min(100, DRIB_GOOD_S * f * 200) + '%';
+    H.perfect.style.width = Math.min(100, DRIB_PERFECT_S * f * 200) + '%';
+  }
+  if ((P.mvSeq || 0) !== H.seq) {
+    const fresh = H.seq !== 0 || P.mvSeq === 1;
+    H.seq = P.mvSeq || 0;
+    if (fresh && P.mvGrade) {
+      dribPop(H.pop, DRIB_GRADE[P.mvGrade].label, P.mvGrade);
+      if (P.combo > 1) dribPop(H.combo, 'COMBO x' + P.combo + (P.combo >= 4 ? '!' : ''));
+    }
   }
 }
 
@@ -6483,54 +6712,10 @@ function humanControlStep(dt) {
     if (P.lock > 0) sp *= 0.25;
     if (P.celeb > 0) sp *= 0.35;
 
-    if (P.cx > 0) {
-      const p = 1 - P.cx / CX_DUR;
-      const curve = Math.sin(Math.PI * p);
-      const dir = P.xd || -P.hand;
-      const gx = -cd.y * dir * 0.85 + cd.x * 0.45 + inDirX * 0.35;
-      const gy = cd.x * dir * 0.85 + cd.y * 0.45 + inDirY * 0.35;
-      locomoteEntity(P, gx, gy, 115 + 75 * curve, dt, 15);
-    } else if (P.bb > 0) {
-      const p = 1 - P.bb / BB_DUR;
-      const curve = Math.sin(Math.PI * p);
-      const gx = -cd.y * P.bdir * 0.90 - cd.x * 0.15 + inDirX * 0.35;
-      const gy = cd.x * P.bdir * 0.90 - cd.y * 0.15 + inDirY * 0.35;
-      locomoteEntity(P, gx, gy, 110 + 70 * curve, dt, 15);
-    } else if (P.sb > 0) {
-      // ROOT MOTION DO STEP-BACK CROSSOVER (Snatch-Back):
-      // Fase 1 (p < 0.22): finca o pé de apoio na frente (jab curto) freando a corrida
-      // Fase 2 (0.22 <= p < 0.82): explosão muscular para trás + separação lateral para o lado da nova mão
-      // Fase 3 (p >= 0.82): ancoragem firme na base larga pronta para o arremesso
-      const p = 1 - P.sb / SB_DUR;
-      const bx = P.x - HX, by = P.y - HY, bl = Math.hypot(bx, by) || 1;
-      const backDirX = bx / bl, backDirY = by / bl;
-      const newHandDir = -(P.prevHand || P.hand);
-      const latX = -backDirY * newHandDir, latY = backDirX * newHandDir;
-      if (p < 0.12) {
-        const jab = Math.sin((p / 0.12) * Math.PI);
-        locomoteEntity(P, -backDirX * 0.7 + latX * 0.3, -backDirY * 0.7 + latY * 0.3, 55 * jab, dt, 24);
-      } else if (p < 0.58) {
-        // deslocamento curto e rápido: os pés chegam atrás antes do tronco
-        const pushP = (p - 0.12) / 0.46;
-        const pushCurve = Math.sin(pushP * Math.PI);
-        const dirX = backDirX * 0.92 + latX * 0.28;
-        const dirY = backDirY * 0.92 + latY * 0.28;
-        locomoteEntity(P, dirX, dirY, 120 + 190 * pushCurve, dt, 22);
-      } else {
-        locomoteEntity(P, 0, 0, 0, dt, 20);
-      }
-    } else if (P.sd > 0) {
-      const p = 1 - P.sd / SD_DUR;
-      const curve = Math.sin(Math.PI * p);
-      const gx = -cd.y * P.sdir * 0.85 + inDirX * 0.40;
-      const gy = cd.x * P.sdir * 0.85 + inDirY * 0.40;
-      locomoteEntity(P, gx, gy, 95 + 75 * curve, dt, 15);
-    } else if (P.spin > 0) {
-      const p = 1 - P.spin / SPIN_DUR;
-      const curve = Math.sin(Math.PI * p);
-      const gx = cd.x * 0.85 - cd.y * P.hand * 0.55 + inDirX * 0.35;
-      const gy = cd.y * 0.85 + cd.x * P.hand * 0.55 + inDirY * 0.35;
-      locomoteEntity(P, gx, gy, 130 + 55 * curve, dt, 15);
+    if (P.shook > 0) sp *= 0.75;                                           // a CPU acertou o drible no tempo: perde um pouco o passo
+
+    if (activeMove(P)) {
+      moveLocomotion(P, dt, cd.x, cd.y, inDirX, inDirY);                    // curvas do drible (anime.js)
     } else if (P.steal > 0 && P.stealGoT > 0) {
       const f = P.stealFoc || B;
       const gdx = f.x - P.x, gdy = f.y - P.y, gl = Math.hypot(gdx, gdy) || 1;
@@ -6626,15 +6811,10 @@ function cpuAgent(E, dt) {
         passBall(E, pm);
         return;
       }
-      if (D(E, M) < 76 && E.cx <= 0 && E.sb <= 0 && R() < 0.025) {
-        if (R() < 0.65) { E.prevHand = E.hand; E.cx = CX_DUR; E.xd = -E.hand; }
-        else { E.prevHand = E.hand; E.sb = SB_DUR; E.open = 1.25; pl.c = 0.25; }
-      }
-      if (E.sb > 0) {
-        const p = 1 - E.sb / SB_DUR;
-        const bx = E.x - HX, by = E.y - HY, bl = Math.hypot(bx, by) || 1;
-        const pushSp = p < 0.22 ? 25 : (p < 0.82 ? 185 * Math.sin(((p - 0.22) / 0.60) * Math.PI) : 0);
-        locomoteEntity(E, bx / bl, by / bl, pushSp, dt, 20);
+      cpuDribble(E, M, pl);
+      if (activeMove(E)) {
+        const tx = pl.tx - E.x, ty = pl.ty - E.y, tl = Math.hypot(tx, ty) || 1;
+        moveLocomotion(E, dt, tx / tl, ty / tl, 0, 0);
       } else {
         const driveSpeed = pl.mode === 'drive' ? 158 : 134;
         locomoteEntity(E, pl.tx - E.x, pl.ty - E.y, driveSpeed, dt);
@@ -6647,7 +6827,10 @@ function cpuAgent(E, dt) {
         pl.c = 0;
       }
     } else {
-      locomoteEntity(E, 0, 0, 0, dt);
+      if (activeMove(E)) {                       // termina o step-back antes de armar o arremesso
+        const bx = HX - E.x, by = HY - E.y, bl = Math.hypot(bx, by) || 1;
+        moveLocomotion(E, dt, bx / bl, by / bl, 0, 0);
+      } else locomoteEntity(E, 0, 0, 0, dt);
       pl.c += dt;
       face(E, HX, HY);
       if (pl.c > 0.60) {
@@ -6672,7 +6855,8 @@ function cpuAgent(E, dt) {
       const ty = H.y + (vy / m) * cushion;
       const distTarget = D(E, { x: tx, y: ty });
       const defMaxSpeed = (H.cx > 0 || H.sd > 0 || H.bb > 0 || H.sb > 0 || H.spin > 0) ? 132 : 158;
-      locomoteEntity(E, tx - E.x, ty - E.y, Math.min(defMaxSpeed, distTarget * 5.2), dt, 7.5);
+      const shookF = E.shook > 0 ? 0.4 : 1;      // drible no tempo certo: o marcador perde o passo
+      locomoteEntity(E, tx - E.x, ty - E.y, Math.min(defMaxSpeed, distTarget * 5.2) * shookF, dt, E.shook > 0 ? 3 : 7.5);
     } else {
       const vx = HX - M.x, vy = HY - M.y, m = Math.hypot(vx, vy) || 1;
       const tx = M.x + (vx / m) * 50;
@@ -6680,10 +6864,12 @@ function cpuAgent(E, dt) {
       locomoteEntity(E, tx - E.x, ty - E.y, Math.min(150, D(E, { x: tx, y: ty }) * 5), dt, 7.5);
     }
 
-    if (D(E, H) < 34 && E.cd <= 0 && H.dunk <= 0) {
+    if (D(E, H) < 34 && E.cd <= 0 && H.dunk <= 0 && !(E.shook > 0)) {
       E.cd = 0.68;
       const exhaustedVulnerability = H.exhausted ? 0.14 : 0;
-      const rawChance = ((H.cx > 0 || H.spin > 0 || H.sb > 0 || H.sd > 0 || H.bb > 0) ? 0.008 : H.dr ? 0.04 : (H === P && charge) ? 0.18 : 0.15) * (isStill(H) ? 1.8 : 1);
+      // drible fora do ritmo deixa a bola exposta no meio do movimento
+      const inMove = activeMove(H), moveChance = !inMove ? 0 : (H.mvGrade === 'late' ? 0.07 : H.mvGrade === 'perfect' ? 0.003 : 0.008);
+      const rawChance = (inMove ? moveChance : H.dr ? 0.04 : (H === P && charge) ? 0.18 : 0.15) * (isStill(H) ? 1.8 : 1);
       const stealChance = Math.min(0.6, rawChance * stealExposure(H, E) * stealSituation(H, E)) + exhaustedVulnerability;
       face(E, B.x, B.y); E.vx += E.fx * 55; E.vy += E.fy * 55;
       E.steal = STEAL_DUR;
@@ -6748,20 +6934,23 @@ function updatePhysicsStep(dt) {
   for (const o of ents()) {
     const prevAir = o.dunk > 0 || o.layup > 0 || o.block > 0 || o.lock > 0;
 
+    const mdt = dt * (o.mvRate || 1);            // drible no ritmo corre mais rápido (e fora do ritmo, mais devagar)
+    const hadMove = !!activeMove(o);
     if (
-      (o.cx > 0 && o.cx - dt <= 0) ||
-      (o.sd > 0 && o.sd - dt <= 0) ||
-      (o.bb > 0 && o.bb - dt <= 0) ||
-      (o.sb > 0 && o.sb - dt <= 0)
+      (o.cx > 0 && o.cx - mdt <= 0) ||
+      (o.sd > 0 && o.sd - mdt <= 0) ||
+      (o.bb > 0 && o.bb - mdt <= 0) ||
+      (o.sb > 0 && o.sb - mdt <= 0)
     ) {
       o.hand *= -1;
     }
 
-    o.cx = Math.max(0, o.cx - dt);
-    o.spin = Math.max(0, o.spin - dt);
-    o.sd = Math.max(0, o.sd - dt);
-    o.bb = Math.max(0, o.bb - dt);
-    o.sb = Math.max(0, o.sb - dt);
+    o.cx = Math.max(0, o.cx - mdt);
+    o.spin = Math.max(0, o.spin - mdt);
+    o.sd = Math.max(0, o.sd - mdt);
+    o.bb = Math.max(0, o.bb - mdt);
+    o.sb = Math.max(0, o.sb - mdt);
+    dribbleStep(o, dt, hadMove && !activeMove(o));
     o.open = Math.max(0, o.open - dt);
     o.steal = Math.max(0, o.steal - dt);
     if (o.stealPend) {
@@ -6916,6 +7105,7 @@ function updatePhysicsStep(dt) {
     const prevBp = o.bp || 0;
     const dribFreq = (o.cx > 0 || o.sd > 0 || o.bb > 0 || o.sb > 0) ? 2.55 : (o.dr ? 2.25 : 1.55 + (o.v / 228) * 1.85);
     o.bp = prevBp + dt * dribFreq;
+    o.dribFreq = dribFreq;                       // usado para medir o timing do drible em segundos
 
     if (!inStartMenu && B.s === 'held' && B.owner === o && o.lock <= 0 && o.dunk <= 0 && o.layup <= 0 && !charge && deadT <= 0) {
       const p1 = prevBp % 1;
@@ -9013,6 +9203,7 @@ function loop(now) {
 
   render(frameDt, now / 1000);
   if (window.fpsTick) window.fpsTick(now);
+  dribHudTick();
   requestAnimationFrame(loop);
 }
 
@@ -10254,7 +10445,7 @@ requestAnimationFrame(loop);
     { id: 'jump',     g: 'act',  name: 'Pular / Arremessar / Toco',  def: 'Space', hint: 'Segure para carregar o arremesso; também pula o replay' },
     { id: 'steal',    g: 'act',  name: 'Roubar a bola',              def: 'KeyE' },
     { id: 'pass',     g: 'act',  name: 'Passar (2v2)',               def: 'KeyG' },
-    { id: 'stance',   g: 'act',  name: 'Postura de drible / defesa', def: 'KeyC', hint: 'Segure + direção para driblar' },
+    { id: 'stance',   g: 'act',  name: 'Postura de drible / defesa', def: 'KeyC', hint: 'Segure + direção para driblar. Aperte com a bola subindo para a mão (barra verde) e encadeie no fim de cada drible' },
     { id: 'cross',    g: 'act',  name: 'Crossover',                  def: 'KeyQ' },
     { id: 'spin',     g: 'act',  name: 'Giro',                       def: 'KeyF' },
     { id: 'camLock',  g: 'cam',  name: 'Câmera fixa na bola',        def: 'KeyL' },
