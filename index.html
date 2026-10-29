@@ -717,6 +717,70 @@ body:not(.in-menu) #cfg-btn { top: calc(58px + env(safe-area-inset-top, 0px)); }
 #home-btn.armed span { display: inline; }
 body.in-menu #home-btn { display: none; }
 
+/* ---------- Primeira entrada (nome → personagem → jogador) ---------- */
+body.onboarding #start-screen, body.onboarding #cfg-btn, body.onboarding #home-btn, body.onboarding #nick-modal { display: none !important; }
+#onboard { position: fixed; inset: 0; z-index: 10000; pointer-events: none; font-family: var(--font); color: #fff; }
+#onboard[hidden] { display: none; }
+#onboard > * { pointer-events: auto; }
+.ob-steps {
+  position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 10002;
+  display: flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px;
+  background: rgba(10,2,4,.82); border: 1px solid rgba(255,255,255,.2); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: rgba(255,255,255,.5); white-space: nowrap;
+}
+.ob-steps span { display: inline-flex; align-items: center; gap: 7px; }
+.ob-steps i { font-style: normal; width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11px; font-weight: 700; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.25); }
+.ob-steps b { width: 22px; height: 1px; background: rgba(255,255,255,.25); }
+.ob-steps span.on { color: #fff; }
+.ob-steps span.on i { background: linear-gradient(180deg, #8f0b27, #6D001A); border-color: #fff; }
+.ob-steps span.done { color: rgba(255,255,255,.8); }
+.ob-steps span.done i { background: rgba(62,207,142,.25); border-color: #3ecf8e; color: #3ecf8e; }
+/* etapa 1 */
+.ob-name { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 70px 16px 16px;
+  background: radial-gradient(ellipse at 70% 40%, rgba(109,0,26,.35), transparent 60%), linear-gradient(160deg, rgba(0,0,0,.88), rgba(20,2,6,.92)); }
+#onboard[data-step="1"] .ob-name { display: flex; }
+.ob-card { width: min(420px, 100%); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.ob-card .start-title { margin: 2px 0 10px; }
+.ob-card h2 { margin: 0; font: 600 17px var(--font); letter-spacing: .14em; text-transform: uppercase; }
+.ob-card p { margin: 0 0 6px; font-size: 13px; color: rgba(255,255,255,.65); }
+.ob-card .field { width: 100%; text-align: center; font-size: 18px; letter-spacing: .12em; }
+.ob-err { color: #ff6b81; font-size: 12px; visibility: hidden; }
+.ob-err.show { visibility: visible; }
+.ob-card .field.bad { border-color: #ff6b81; animation: obShake .3s; }
+@keyframes obShake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+.ob-row { display: flex; gap: 10px; width: 100%; margin-top: 6px; }
+.ob-row .btn-cta { flex: 1; justify-content: center; height: 50px; font-size: 16px; }
+.ob-ghost { flex: 1; padding: 0 16px; min-height: 44px; border-radius: 999px; cursor: pointer; color: #fff; font: 600 13px var(--font); letter-spacing: .06em;
+  background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.28); }
+.ob-ghost:hover { background: rgba(255,255,255,.14); }
+/* etapa 2: barra embaixo, ao lado do editor (o boneco fica visível à direita) */
+.ob-bar {
+  position: fixed; z-index: 10001; display: none; align-items: center; gap: 14px; flex-wrap: wrap;
+  left: calc(min(340px, 50vw) + 32px); right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  padding: 10px 12px; border-radius: 18px; background: rgba(10,2,4,.85); border: 1px solid rgba(255,255,255,.2);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+#onboard[data-step="2"] .ob-bar { display: flex; }
+.ob-tabs { display: flex; gap: 6px; padding: 4px; border-radius: 999px; background: rgba(0,0,0,.45); }
+.ob-tabs button { padding: 8px 16px; border-radius: 999px; cursor: pointer; color: rgba(255,255,255,.75); font: 600 13px var(--font); letter-spacing: .06em; background: transparent; border: 1px solid transparent; }
+.ob-tabs button.on { color: #fff; background: linear-gradient(180deg, #8f0b27, #6D001A 60%, #450010); border-color: rgba(255,255,255,.45); }
+.ob-hint { font-size: 11.5px; color: rgba(255,255,255,.55); }
+.ob-nav { margin-left: auto; display: flex; gap: 8px; }
+.ob-nav .ob-ghost { flex: none; }
+.ob-nav .btn-cta { height: 44px; padding: 0 26px; justify-content: center; }
+/* etapa 3: o painel de jogador vira tela do fluxo (sem fechar pelo X, com Voltar) */
+.cls-back { display: none; flex: none; padding: 9px 18px; border-radius: 999px; cursor: pointer; color: #fff; font: 600 13px var(--font); background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.28); }
+#class-panel.wizard .cls-back { display: inline-block; }
+#class-panel.wizard #class-close { display: none; }
+#class-panel.wizard .cls-win { margin-top: 52px; max-height: calc(90vh - 52px); }
+@media (max-width: 820px), (max-height: 520px) {
+  .ob-steps { font-size: 10px; padding: 5px 10px; gap: 5px; }
+  .ob-steps b { width: 10px; }
+  .ob-bar { left: calc(min(300px, 50vw) + 16px); right: 8px; bottom: 8px; padding: 6px 8px; gap: 8px; }
+  .ob-hint { display: none; }
+  #class-panel.wizard .cls-win { margin-top: 40px; height: calc(100dvh - 40px); }
+}
+
 /* ---------- Escolha de classe (à esquerda; o boneco do menu, à direita, muda de porte ao escolher) ---------- */
 #class-panel {
   position: fixed; inset: 0; z-index: 150; display: none; pointer-events: auto; font-family: var(--font); color: #fff;
@@ -754,6 +818,29 @@ body.in-menu #home-btn { display: none; }
 .cls-attr .bar i { display: block; height: 100%; border-radius: 99px; background: var(--cc); }
 .cls-attr .bar i.lo { background: rgba(255,255,255,.35); }
 .cls-attr b { font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+.cls-attr .bar { display: flex; }
+.cls-attr .bar i.pt { background: #fff; box-shadow: 0 0 6px rgba(255,255,255,.8); border-radius: 0 99px 99px 0; }
+.cls-attr b sup { font-size: 8.5px; color: #fff; margin-left: 1px; }
+/* editor de pontos da base escolhida */
+.cls-build { --cc: #fff; border-radius: 16px; padding: 12px 14px; background: rgba(0,0,0,.35); border: 1px solid color-mix(in srgb, var(--cc) 45%, transparent); }
+.cls-build-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.cls-build-head b { font: 700 14px var(--font); }
+.cls-build-head b i { font-style: normal; color: var(--cc); }
+.cls-build-head .left { font-size: 12px; color: rgba(255,255,255,.7); }
+.cls-build-head .left strong { color: var(--cc); font-size: 14px; }
+.cls-build-head button { margin-left: auto; padding: 6px 12px; border-radius: 999px; cursor: pointer; color: #fff; font: 600 11px var(--font); letter-spacing: .08em; text-transform: uppercase; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.3); }
+.cls-build-head button:hover { background: rgba(255,255,255,.16); }
+.cls-build-rows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 18px; }
+.pt-row { display: grid; grid-template-columns: 112px 1fr 34px 54px; align-items: center; gap: 8px; font-size: 11px; color: rgba(255,255,255,.8); }
+.pt-row .bar { height: 6px; border-radius: 99px; background: rgba(255,255,255,.1); overflow: hidden; display: flex; }
+.pt-row .bar i { display: block; height: 100%; background: var(--cc); }
+.pt-row .bar i.pt { background: #fff; box-shadow: 0 0 6px rgba(255,255,255,.8); }
+.pt-row b { text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }
+.pt-row b sup { font-size: 8.5px; color: var(--cc); }
+.pt-btns { display: flex; gap: 4px; }
+.pt-btns button { width: 25px; height: 22px; border-radius: 7px; cursor: pointer; color: #fff; font: 700 14px/1 var(--font); background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.25); }
+.pt-btns button:hover:not(:disabled) { background: color-mix(in srgb, var(--cc) 40%, transparent); border-color: var(--cc); }
+.pt-btns button:disabled { opacity: .3; cursor: default; }
 .cls-foot { display: flex; align-items: center; gap: 12px; font-size: 11.5px; color: rgba(255,255,255,.6); }
 .cls-foot span { flex: 1; }
 .cls-done {
@@ -766,6 +853,8 @@ body.in-menu #home-btn { display: none; }
   .cls-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .cls-card p { display: none; }
   .cls-attr { grid-template-columns: 84px 1fr 20px; font-size: 9.5px; }
+  .cls-build-rows { grid-template-columns: 1fr; }
+  .pt-row { grid-template-columns: 96px 1fr 30px 54px; }
 }
 /* ---------- Modal de configurações (abas, câmera, teclas, gráficos, áudio) ---------- */
 #cfg-panel {
@@ -1056,7 +1145,7 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
 
       <button class="row-btn" id="btn-class" onclick="openClassPanel()">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="2.5"/><path d="M12 8.5v6.5M8 21l4-6 4 6M6 11.5l6-1.5 6 1.5"/></svg>
-        <span>Classe do jogador</span>
+        <span>Escolher jogador</span>
         <span class="menu-btn-sub" id="sub-class">Driblador</span>
       </button>
 
@@ -1233,13 +1322,46 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
 <div id="class-panel" role="dialog" aria-modal="true" aria-labelledby="class-title">
   <div class="cls-win">
     <header class="cls-head">
-      <h3 id="class-title">Classe do jogador</h3>
-      <p>Cada classe muda o corpo do boneco e os atributos que entram no arremesso, no drible, no contato e na defesa.</p>
+      <h3 id="class-title">Escolha seu jogador</h3>
+      <p>Cada base é um dos amigos, com corpo e atributos próprios. Depois distribua seus pontos onde quiser.</p>
       <button class="cfg-x" id="class-close" aria-label="Fechar">✕</button>
     </header>
     <div class="cls-grid" id="class-grid"></div>
-    <footer class="cls-foot"><span>A CPU sorteia uma classe por partida. No online, cada um joga com a própria.</span><button class="cls-done" id="class-done">Pronto</button></footer>
+    <div class="cls-build" id="class-build"></div>
+    <footer class="cls-foot"><button class="cls-back" id="class-back" type="button">Voltar</button><span>A CPU sorteia uma base e distribui os pontos dela. No online, cada um joga com a própria base e pontos.</span><button class="cls-done" id="class-done">Pronto</button></footer>
   </div>
+</div>
+
+<!-- PRIMEIRA ENTRADA: 1 nome → 2 personagem (rosto/roupas) → 3 jogador (base + pontos) -->
+<div id="onboard" hidden>
+  <div class="ob-steps" aria-label="Etapas">
+    <span data-s="1"><i>1</i>Nome</span><b></b><span data-s="2"><i>2</i>Personagem</span><b></b><span data-s="3"><i>3</i>Jogador</span>
+  </div>
+  <section class="ob-name" id="ob-step1">
+    <div class="ob-card">
+      <div class="start-tag"><i></i>Basquete de rua · 3D</div>
+      <h1 class="start-title">Aero<b>Hoop</b></h1>
+      <h2>Como você quer ser chamado?</h2>
+      <p>Seu nome aparece no placar e para o adversário no online.</p>
+      <input id="ob-nick" class="field" maxlength="12" placeholder="Seu nome" autocomplete="off" spellcheck="false">
+      <small class="ob-err" id="ob-err">Digite um nome para continuar.</small>
+      <div class="ob-row">
+        <button class="ob-ghost" id="ob-skip" type="button" hidden>Entrar com o perfil salvo</button>
+        <button class="btn-cta" id="ob-next1" type="button"><span>Próximo</span></button>
+      </div>
+    </div>
+  </section>
+  <section class="ob-bar" id="ob-step2">
+    <div class="ob-tabs" role="tablist">
+      <button type="button" data-ed="face" role="tab">Rosto</button>
+      <button type="button" data-ed="clothes" role="tab">Roupas</button>
+    </div>
+    <span class="ob-hint">Arraste o boneco para girar</span>
+    <div class="ob-nav">
+      <button class="ob-ghost" id="ob-back2" type="button">Voltar</button>
+      <button class="btn-cta" id="ob-next2" type="button"><span>Próximo</span></button>
+    </div>
+  </section>
 </div>
 
 <div id="rotate-overlay">
@@ -5021,54 +5143,87 @@ const K = {};
 let rimShake = 0;
 
 /* ============================================================================
-   CLASSES DE JOGADOR: atributos (40–99) e porte físico
+   JOGADORES-BASE (amigos) + PONTOS DE ATRIBUTO
+   4 bases com atributos modestos (todas somam o mesmo total) e o jogador ganha BUILD_POINTS
+   pontos para colocar onde quiser (cada ponto = +POINT_VALUE no atributo).
    75 = referência (o jogo original); attrK devolve -1..+1 em torno disso e cada sistema
    (arremesso, drible, corpo, velocidade, fôlego, roubo, toco, finalização) escala por ele.
    ============================================================================ */
+// >>> nomes dos amigos de cada base (troque aqui) <<<
+const FRIEND_NAMES = { driblador: 'Júlio', pivo: 'Pivô', arremessador: 'Chutador', enterrador: 'Dunker' };
 const ATTR_INFO = [
   ['spd', 'Velocidade'], ['sta', 'Estamina'], ['dri', 'Drible'], ['mid', 'Arremesso de média'], ['three', 'Arremesso de 3'],
   ['fin', 'Finalização'], ['str', 'Força / corpo'], ['def', 'Defesa / roubo'], ['blk', 'Toco / impulsão']
 ];
 const CLASSES = {
   driblador: {
-    name: 'Driblador', role: 'Armador', color: '#2bb6ff',
-    desc: 'Baixo e leve: fôlego de sobra, drible no ritmo mais fácil e bola difícil de roubar. Sofre no contato físico.',
-    attr: { spd: 88, sta: 95, dri: 96, mid: 72, three: 70, fin: 70, str: 45, def: 82, blk: 40 },
+    name: FRIEND_NAMES.driblador, role: 'Driblador', color: '#2bb6ff',
+    desc: 'Baixo e leve: fôlego e drible acima da média, bola difícil de roubar. Sofre no contato físico.',
+    attr: { spd: 80, sta: 82, dri: 84, mid: 64, three: 62, fin: 60, str: 45, def: 72, blk: 40 },
     body: { h: 0.94, w: 0.9, bulk: 0.88 }
   },
   pivo: {
-    name: 'Pivô', role: 'Garrafão', color: '#ffb347',
-    desc: 'Alto e largo: ganha no corpo, protege o aro com tocos e contesta arremessos. Lento e com chute de longe fraco.',
-    attr: { spd: 58, sta: 68, dri: 48, mid: 80, three: 45, fin: 88, str: 97, def: 72, blk: 94 },
+    name: FRIEND_NAMES.pivo, role: 'Pivô', color: '#ffb347',
+    desc: 'Alto e largo: ganha no corpo, dá toco e contesta. Lento e com chute de longe fraco.',
+    attr: { spd: 55, sta: 62, dri: 44, mid: 72, three: 44, fin: 80, str: 84, def: 66, blk: 82 },
     body: { h: 1.1, w: 1.16, bulk: 1.2 }
   },
   arremessador: {
-    name: 'Arremessador', role: 'Chutador', color: '#3ecf8e',
-    desc: 'Alto e magro: janela verde maior e chute de três que quase não perde força com a distância.',
-    attr: { spd: 76, sta: 74, dri: 72, mid: 92, three: 97, fin: 60, str: 55, def: 64, blk: 50 },
+    name: FRIEND_NAMES.arremessador, role: 'Chutador', color: '#3ecf8e',
+    desc: 'Alto e magro: a melhor mão de média e de três. Pouco corpo e defesa média.',
+    attr: { spd: 68, sta: 68, dri: 66, mid: 82, three: 85, fin: 56, str: 52, def: 60, blk: 52 },
     body: { h: 1.03, w: 0.94, bulk: 0.95 }
   },
   enterrador: {
-    name: 'Enterrador', role: 'Atleta', color: '#ff6b81',
-    desc: 'Explosivo: o mais rápido, salta alto, enterra de mais longe e finaliza bem no contato. Chute de fora limitado.',
-    attr: { spd: 94, sta: 80, dri: 76, mid: 62, three: 55, fin: 97, str: 74, def: 70, blk: 88 },
+    name: FRIEND_NAMES.enterrador, role: 'Dunker', color: '#ff6b81',
+    desc: 'Explosivo: rápido, salta alto e finaliza no aro. Chute de fora limitado.',
+    attr: { spd: 80, sta: 66, dri: 62, mid: 54, three: 46, fin: 84, str: 61, def: 60, blk: 76 },
     body: { h: 1.02, w: 1.06, bulk: 1.1 }
   }
 };
 const CLASS_IDS = Object.keys(CLASSES);
 const clsOf = o => (o && CLASSES[o.cls]) || null;
+
+// PONTOS: poucos e com teto por atributo, para personalizar sem desequilibrar
+const BUILD_POINTS = 10, POINT_VALUE = 2, POINT_MAX_PER_ATTR = 5;
+// pontos ficam no próprio jogador como números (pt_spd, pt_dri...) para irem no snapshot do online
+function applyBuild(o, pts) { if (!o) return; for (const [a] of ATTR_INFO) o['pt_' + a] = (pts && pts[a]) || 0; }
+// valida pontos vindos do localStorage ou da rede (teto por atributo e no total)
+function cleanBuild(pts) {
+  const out = {}; let left = BUILD_POINTS;
+  for (const [a] of ATTR_INFO) { const n = Math.max(0, Math.min(POINT_MAX_PER_ATTR, left, (pts && pts[a]) | 0)); if (n) out[a] = n; left -= n; }
+  return out;
+}
+const buildUsed = pts => Object.values(pts || {}).reduce((s, n) => s + n, 0);
+// valor final do atributo = base da classe + pontos (máx. 99)
+function effAttr(o, a) { const c = clsOf(o); return c ? Math.min(99, c.attr[a] + POINT_VALUE * (o['pt_' + a] || 0)) : 75; }
 // -1..+1 em torno de 75 (sem classe = 0, comportamento original)
-function attrK(o, a) { const c = clsOf(o); return c ? (c.attr[a] - 75) / 25 : 0; }
+function attrK(o, a) { return clsOf(o) ? (effAttr(o, a) - 75) / 25 : 0; }
 const bodyOf = o => (clsOf(o) || { body: { h: 1, w: 1, bulk: 1 } }).body;
-let myClass = 'driblador';
+
+let myClass = 'driblador', myBuilds = {};
 try { const c = localStorage.getItem('aerohoop_class'); if (CLASSES[c]) myClass = c; } catch (e) {}
+try { const b = JSON.parse(localStorage.getItem('aerohoop_builds_v1') || '{}'); for (const id of CLASS_IDS) myBuilds[id] = cleanBuild(b[id]); } catch (e) { for (const id of CLASS_IDS) myBuilds[id] = {}; }
+function saveBuilds() { try { localStorage.setItem('aerohoop_builds_v1', JSON.stringify(myBuilds)); } catch (e) {} }
 const randomClass = () => CLASS_IDS[(R() * CLASS_IDS.length) | 0];
-// distribui as classes: você = a escolhida; online o adversário usa a dele; CPUs sorteiam
+// CPU: espalha os pontos puxando para os pontos fortes da base
+function cpuBuild(id) {
+  const c = CLASSES[id], top = ATTR_INFO.map(([a]) => a).sort((x, y) => c.attr[y] - c.attr[x]), pts = {};
+  for (let i = 0; i < BUILD_POINTS; i++) {
+    const a = R() < 0.7 ? top[(R() * 3) | 0] : top[(R() * top.length) | 0];
+    if ((pts[a] || 0) < POINT_MAX_PER_ATTR) pts[a] = (pts[a] || 0) + 1; else i--;
+  }
+  return pts;
+}
+// distribui bases e pontos: você = a escolhida; online o adversário usa a dele; CPUs sorteiam
 function assignClasses() {
-  if (P) P.cls = myClass;
-  if (A) A.cls = NET.live ? (NET.opCls || 'driblador') : randomClass();
-  if (TM) TM.cls = randomClass();
-  if (A2) A2.cls = randomClass();
+  if (P) { P.cls = myClass; applyBuild(P, myBuilds[myClass]); }
+  if (A) {
+    A.cls = NET.live ? (NET.opCls || 'driblador') : randomClass();
+    applyBuild(A, NET.live ? NET.opPts : cpuBuild(A.cls));
+  }
+  if (TM) { TM.cls = randomClass(); applyBuild(TM, cpuBuild(TM.cls)); }
+  if (A2) { A2.cls = randomClass(); applyBuild(A2, cpuBuild(A2.cls)); }
 }
 
 function mkPlayer(x, y) {
@@ -5205,6 +5360,7 @@ function applyRemoteCustomization(p, data) {
   if (data.c) applyRemoteClothes(p, data.c);
   if (data.n) setOpNick(String(data.n || 'ADVERSÁRIO').slice(0, 12));
   if (data.k && CLASSES[data.k]) { NET.opCls = data.k; if (A && NET.role === 'host') A.cls = data.k; }   // no convidado chega pelo snapshot
+  if (data.kp) { NET.opPts = cleanBuild(data.kp); if (A && NET.role === 'host') applyBuild(A, NET.opPts); }   // pontos validados (teto)
 }
 
 function netSendCustomization() {
@@ -5214,7 +5370,8 @@ function netSendCustomization() {
     f: faceCfg,
     c: (window.myOutfit || { shirt: 'blessed', pants: 'style:neveryoung', shoes: 'aero' }),
     n: (MY_NICK || 'PLAYER'),
-    k: myClass                    // classe escolhida (o anfitrião aplica no jogador remoto)
+    k: myClass,                   // base escolhida (o anfitrião aplica no jogador remoto)
+    kp: myBuilds[myClass]          // pontos de atributo dessa base
   };
   netSend(payload);
   // Pacotes individuais para compatibilidade e redundância
@@ -11681,39 +11838,152 @@ requestAnimationFrame(loop);
 })();
 
 /* ============================================================================
-   ESCOLHA DE CLASSE: cartões com os atributos; o boneco do menu muda de porte na hora
+   ESCOLHA DE JOGADOR: bases (amigos) com atributos e editor dos pontos de atributo
    ============================================================================ */
 (function () {
-  const panel = $('class-panel'), grid = $('class-grid'), sub = $('sub-class');
+  const panel = $('class-panel'), grid = $('class-grid'), sub = $('sub-class'), build = $('class-build');
   for (const ev of ['mousedown', 'mouseup', 'click', 'pointerdown', 'pointerup', 'wheel', 'touchstart'])
     panel.addEventListener(ev, e => e.stopPropagation(), { passive: true });
+  // barra base + pontos (o trecho branco é o que veio dos pontos)
+  const barHtml = (id, a) => {
+    const base = CLASSES[id].attr[a], pts = (myBuilds[id][a] || 0) * POINT_VALUE, tot = Math.min(99, base + pts);
+    return `<span class="bar"><i class="${base < 65 ? 'lo' : ''}" style="width:${base}%"></i><i class="pt" style="width:${tot - base}%"></i></span>` +
+      `<b>${tot}${tot > base ? `<sup>+${tot - base}</sup>` : ''}</b>`;
+  };
   const cards = {};
   for (const id of CLASS_IDS) {
     const c = CLASSES[id], card = document.createElement('button');
     card.type = 'button'; card.className = 'cls-card'; card.style.setProperty('--cc', c.color);
-    card.innerHTML = `<div class="top"><b>${c.name}</b><i>${c.role}</i><em>✓ Selecionada</em></div><p>${c.desc}</p><div class="cls-attrs">` +
-      ATTR_INFO.map(([k, n]) => `<div class="cls-attr"><span>${n}</span><span class="bar"><i class="${c.attr[k] < 65 ? 'lo' : ''}" style="width:${c.attr[k]}%"></i></span><b>${c.attr[k]}</b></div>`).join('') +
-      '</div>';
     card.onclick = () => choose(id);
     grid.append(card); cards[id] = card;
   }
+  function renderCard(id) {
+    const c = CLASSES[id];
+    cards[id].innerHTML = `<div class="top"><b>${c.name}</b><i>${c.role}</i><em>✓ Selecionado</em></div><p>${c.desc}</p><div class="cls-attrs">` +
+      ATTR_INFO.map(([k, n]) => `<div class="cls-attr"><span>${n}</span>${barHtml(id, k)}</div>`).join('') + '</div>';
+  }
+  // editor dos pontos da base escolhida: + / - por atributo, teto por atributo e no total
+  function renderBuild() {
+    const id = myClass, c = CLASSES[id], pts = myBuilds[id], left = BUILD_POINTS - buildUsed(pts);
+    build.style.setProperty('--cc', c.color);
+    build.innerHTML = `<div class="cls-build-head"><b>Pontos de <i>${c.name}</i></b>` +
+      `<span class="left"><strong>${left}</strong> de ${BUILD_POINTS} livres · cada ponto = +${POINT_VALUE} (máx. ${POINT_MAX_PER_ATTR} por atributo)</span>` +
+      `<button type="button" data-reset ${buildUsed(pts) ? '' : 'disabled'}>Redistribuir</button></div><div class="cls-build-rows">` +
+      ATTR_INFO.map(([a, n]) => {
+        const p = pts[a] || 0, atMax = p >= POINT_MAX_PER_ATTR || c.attr[a] + POINT_VALUE * (p + 1) > 99 + POINT_VALUE - 1;
+        return `<div class="pt-row"><span>${n}</span>${barHtml(id, a)}<span class="pt-btns">` +
+          `<button type="button" data-a="${a}" data-d="-1" ${p ? '' : 'disabled'} aria-label="Tirar ponto de ${n}">−</button>` +
+          `<button type="button" data-a="${a}" data-d="1" ${left && !atMax ? '' : 'disabled'} aria-label="Colocar ponto em ${n}">+</button></span></div>`;
+      }).join('') + '</div>';
+  }
+  build.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b || b.disabled) return;
+    const pts = myBuilds[myClass];
+    if (b.hasAttribute('data-reset')) myBuilds[myClass] = {};
+    else {
+      const a = b.dataset.a, d = +b.dataset.d, n = Math.max(0, (pts[a] || 0) + d);
+      if (n) pts[a] = n; else delete pts[a];
+      myBuilds[myClass] = cleanBuild(pts);
+    }
+    saveBuilds();
+    if (P && P.cls === myClass) applyBuild(P, myBuilds[myClass]);
+    refresh();
+    if (NET.conn && NET.conn.open) netSendCustomization();
+  });
   function refresh() {
-    for (const id in cards) cards[id].classList.toggle('on', id === myClass);
-    if (sub) sub.textContent = CLASSES[myClass].name;
+    for (const id in cards) { renderCard(id); cards[id].classList.toggle('on', id === myClass); }
+    renderBuild();
+    if (sub) sub.textContent = CLASSES[myClass].name + ' · ' + CLASSES[myClass].role;
   }
   function choose(id) {
     myClass = id;
     try { localStorage.setItem('aerohoop_class', id); } catch (e) {}
-    if (P) P.cls = id;                                   // vitrine do menu já mostra o porte novo
+    if (P) { P.cls = id; applyBuild(P, myBuilds[id]); }   // vitrine do menu já mostra o porte novo
     refresh();
     if (NET.conn && NET.conn.open) netSendCustomization();
   }
-  const close = () => panel.classList.remove('open');
+  // no fluxo de primeira entrada (classe .wizard) o painel não fecha sozinho: Voltar/Começar controlam o fluxo
+  const close = () => { if (!panel.classList.contains('wizard')) panel.classList.remove('open'); };
   window.openClassPanel = () => { refresh(); panel.classList.add('open'); };
-  $('class-close').onclick = close; $('class-done').onclick = close;
+  $('class-close').onclick = close;
+  $('class-done').onclick = () => (panel.classList.contains('wizard') && window.onboardFinish ? window.onboardFinish() : close());
+  $('class-back').onclick = () => window.onboardBack && window.onboardBack();
   panel.addEventListener('click', e => { if (e.target === panel) close(); });
   addEventListener('keydown', e => { if (e.code === 'Escape' && panel.classList.contains('open')) close(); });
   refresh();
+})();
+
+/* ============================================================================
+   PRIMEIRA ENTRADA: 1 nome → 2 personagem (rosto/roupas) → 3 jogador (base + pontos) → menu
+   Aparece sempre que o jogo abre, já preenchido; quem tem perfil salvo pode pular direto para o menu.
+   ============================================================================ */
+(function () {
+  const ob = $('onboard'), body = document.body, nick = $('ob-nick'), err = $('ob-err'), cls = $('class-panel');
+  const PROFILE_KEY = 'aerohoop_profile_v1';
+  let step = 0, editor = 'face';
+  for (const ev of ['mousedown', 'mouseup', 'click', 'pointerdown', 'pointerup', 'wheel', 'touchstart'])
+    for (const el of ob.children) el.addEventListener(ev, e => e.stopPropagation(), { passive: true });
+  const hasProfile = () => { try { return localStorage.getItem(PROFILE_KEY) === '1' && !!MY_NICK; } catch (e) { return false; } };
+
+  function closeEditors() {
+    if (faceEdit) closeFaceEditor();
+    if (wardrobeOpen) closeWardrobe();
+    cls.classList.remove('wizard', 'open');
+  }
+  function openEditor(which) {
+    editor = which;
+    if (which === 'face') { if (wardrobeOpen) closeWardrobe(); if (!faceEdit) openFaceEditor(); }
+    else { if (faceEdit) closeFaceEditor(); if (!wardrobeOpen) openWardrobe(); }
+    ob.querySelectorAll('.ob-tabs button').forEach(b => b.classList.toggle('on', b.dataset.ed === which));
+  }
+  function show(n) {
+    step = n;
+    closeEditors();
+    ob.dataset.step = n;
+    ob.querySelectorAll('.ob-steps span').forEach(s => { const k = +s.dataset.s; s.classList.toggle('on', k === n); s.classList.toggle('done', k < n); });
+    if (n === 1) { nick.value = MY_NICK || ''; err.classList.remove('show'); setTimeout(() => nick.focus(), 50); }
+    if (n === 2) openEditor(editor);
+    if (n === 3) { cls.classList.add('wizard'); openClassPanel(); $('class-done').textContent = 'Começar'; }
+  }
+  function saveName() {
+    const v = nick.value.trim().slice(0, 12);
+    if (!v) { err.classList.add('show'); nick.classList.remove('bad'); void nick.offsetWidth; nick.classList.add('bad'); nick.focus(); return false; }
+    MY_NICK = v;
+    try { localStorage.setItem('aerohoop_nick', v); } catch (e) {}
+    refreshNames();
+    return true;
+  }
+  function finish() {
+    closeEditors();
+    $('class-done').textContent = 'Pronto';
+    try { localStorage.setItem(PROFILE_KEY, '1'); } catch (e) {}
+    const nm = $('nick-modal'); if (nm) nm.style.display = 'none';   // o apelido já veio da etapa 1
+    body.classList.remove('onboarding');
+    ob.hidden = true;
+    const ss = $('start-screen'); if (ss) ss.classList.remove('hidden');
+    if (window.netSendCustomization) netSendCustomization();
+  }
+  window.onboardFinish = finish;
+  window.onboardBack = () => show(Math.max(1, step - 1));
+
+  $('ob-next1').onclick = () => { if (saveName()) show(2); };
+  $('ob-skip').onclick = () => { if (saveName()) finish(); };
+  nick.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') $('ob-next1').click(); });   // não aciona teclas do jogo
+  nick.addEventListener('input', () => { if (nick.value.trim()) err.classList.remove('show'); });
+  ob.querySelectorAll('.ob-tabs button').forEach(b => b.onclick = () => openEditor(b.dataset.ed));
+  $('ob-back2').onclick = () => show(1);
+  $('ob-next2').onclick = () => show(3);
+  // os botões de "pronto" dos editores avançam o fluxo: rosto -> roupas -> jogador
+  const fpDone = document.getElementById('fp-done'), wlSave = document.getElementById('wl-save');
+  if (fpDone) { const f = fpDone.onclick; fpDone.onclick = e => (step === 2 && !ob.hidden ? openEditor('clothes') : f && f(e)); }
+  if (wlSave) { const f = wlSave.onclick; wlSave.onclick = e => (step === 2 && !ob.hidden ? show(3) : f && f(e)); }
+
+  // início: sempre abre o fluxo já preenchido
+  $('ob-skip').hidden = !hasProfile();
+  body.classList.add('onboarding');
+  ob.hidden = false;
+  show(1);
 })();
 </script>
 <style id="aero-late">
