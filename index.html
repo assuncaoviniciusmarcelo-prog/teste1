@@ -5582,7 +5582,7 @@ function netTick(dt) {
     t: 's', P: dl('P', P), A: dl('A', A), B: dl('B', B),
     TM: dl('TM', TM), A2: dl('A2', A2),
     bo: !B.owner ? null : (B.owner === P ? 'p' : (B.owner === A ? 'a' : (TM && B.owner === TM ? 't' : (A2 && B.owner === A2 ? 'u' : null)))),
-    poss, sc: { p: score.p, a: score.a }, dt: deadT, rs: rimShake,
+    poss, sc: { p: score.p, a: score.a }, dt: deadT, rs: rimShake, ct: clearTeam,
     ch: NET.rcharge ? NET.rcharge.t : null
   });
 }
@@ -5669,6 +5669,7 @@ function guestStep(dt) {
   ap(B, sn.B, ['x', 'y', 'z']);
   B.owner = sn.bo === 'p' ? A : (sn.bo === 'a' ? P : (sn.bo === 't' ? A2 : (sn.bo === 'u' ? TM : null)));
   poss = sn.poss === 'p' ? 'a' : (sn.poss === 'a' ? 'p' : sn.poss);
+  clearTeam = sn.ct === 'p' ? 'a' : (sn.ct === 'a' ? 'p' : null);   // regra de limpar (lado trocado no convidado)
   score.p = sn.sc.a; score.a = sn.sc.p;
   deadT = sn.dt; rimShake = sn.rs;
   charge = sn.ch == null ? null : { t: sn.ch };
@@ -5704,7 +5705,38 @@ function updateScorebug() {
   if (P) $('state-val').textContent = STATE_PT[P.state] || P.state;
 }
 
+/* ---- REGRA DE LIMPAR A BOLA ----
+   Quando a posse troca de time no meio da jogada (rebote defensivo, roubo, toco, passe interceptado),
+   o novo ataque precisa levar a bola para trás da linha de 3 antes de finalizar. Finalizar antes = violação
+   (a posse vai para o outro time). Enquanto não limpa, a linha de 3 brilha em verde. Não vale no treino. */
+let clearTeam = null, lastPossTeam = null;
+// atrás da linha de 3: nos cantos (antes da altura do aro) a linha é reta; depois é o arco
+function beyondArc(o) { return o.y < HY ? Math.abs(o.x - HX) > ARC + 2 : Math.hypot(o.x - HX, o.y - HY) > ARC + 2; }
+function mustClear(o) { return MODE !== 'train' && !!clearTeam && !!o && teamOf(o) === clearTeam; }
+// alguém pegou a bola solta: se a posse mudou de time e ele está dentro da linha, precisa limpar
+function onPossessionPickup(w) {
+  const t = teamOf(w);
+  if (MODE !== 'train' && lastPossTeam && t !== lastPossTeam) {
+    clearTeam = beyondArc(w) ? null : t;
+    if (clearTeam && t === teamOf(P) && !NET.swapped) say('LIMPE A BOLA: SAIA DA LINHA DE 3', 1.3, 'normal');
+  }
+  lastPossTeam = t;
+}
+// por passo de física: o portador do time que precisa limpar cruzou a linha
+function clearStep() {
+  if (!clearTeam || B.s !== 'held' || !B.owner || teamOf(B.owner) !== clearTeam || !beyondArc(B.owner)) return;
+  clearTeam = null;
+  if (teamOf(B.owner) === teamOf(P)) say('BOLA LIMPA!', 0.8, 'good');
+}
+function clearViolation(S) {
+  const t = teamOf(S), mine = t === teamOf(P);
+  say(mine ? 'VIOLAÇÃO: NÃO LIMPOU A BOLA!' : 'VIOLAÇÃO: ADVERSÁRIO NÃO LIMPOU A BOLA', 1.4, mine ? 'bad' : 'good');
+  if (typeof audio !== 'undefined') audio.playWhistle(0.7);
+  startPossession(t === 'p' ? 'a' : 'p');   // posse inválida: a bola vai para o outro time
+}
+
 function startPossession(w) {
+  clearTeam = null; lastPossTeam = w;           // bola checada: começa limpa
   const t = w === 'p' ? P : A;
   const o = w === 'p' ? A : P;
   t.x = HX; t.y = 420; t.vx = 0; t.vy = 0;
@@ -5939,6 +5971,8 @@ function pickVariety(S, key, n) {
   return t;
 }
 function tryStartDunkOrLayup(S) {
+  // finalizar (arremesso, bandeja ou enterrada) sem limpar a bola = violação; true = jogada tratada
+  if (B.s === 'held' && B.owner === S && mustClear(S)) { clearViolation(S); return true; }
   if (B.s !== 'held' || B.owner !== S) return false;
   const distToRim = D(S, { x: HX, y: HY });
   const isSprinting = S === P ? ((K.ShiftLeft || K.ShiftRight) && !S.exhausted && S.stamina >= 22) : (S.v > 140);
@@ -7035,6 +7069,34 @@ function boteHudTick() {
     ankleFx(o);
   }
 }
+// LINHA DE 3 EM DESTAQUE: verde brilhante pulsando enquanto o time que recuperou a posse não limpou a bola.
+// Segue o mesmo traçado da quadra: reta do canto esquerdo, arco em volta do aro e reta do canto direito.
+let clearLine = null;
+function buildClearLine() {
+  const pts = [], y = 0;
+  for (let i = 0; i <= 12; i++) pts.push(new THREE.Vector3((HX - ARC) * s, y, (HY * i / 12) * s));
+  for (let i = 1; i < 72; i++) { const a = Math.PI - Math.PI * i / 72; pts.push(new THREE.Vector3((HX + ARC * Math.cos(a)) * s, y, (HY + ARC * Math.sin(a)) * s)); }
+  for (let i = 0; i <= 12; i++) pts.push(new THREE.Vector3((HX + ARC) * s, y, (HY * (12 - i) / 12) * s));
+  const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.01);
+  const g = new THREE.Group();
+  const core = new THREE.Mesh(new THREE.TubeGeometry(curve, 260, 0.075, 6), new THREE.MeshBasicMaterial({ color: 0x00ff5e, transparent: true, opacity: 0, depthWrite: false, toneMapped: false }));
+  const glow = new THREE.Mesh(new THREE.TubeGeometry(curve, 260, 0.2, 6), new THREE.MeshBasicMaterial({ color: 0x00e676, transparent: true, opacity: 0, depthWrite: false, toneMapped: false }));
+  for (const m of [core, glow]) { m.userData.noShadow = true; m.userData.noReceive = true; m.scale.y = 0.25; m.position.y = 0.045; g.add(m); }   // achatado, um pouco acima do piso
+  g.userData = { core, glow, k: 0 };
+  sc.add(g);
+  return g;
+}
+function clearLineTick(t) {
+  const want = !!clearTeam && !inStartMenu && MODE !== 'train' ? 1 : 0;
+  if (!clearLine) { if (!want) return; clearLine = buildClearLine(); }
+  const u = clearLine.userData;
+  u.k += (want - u.k) * 0.18;                    // acende e apaga suave (volta à cor original ao limpar)
+  const pulse = 0.75 + 0.25 * Math.sin(t * 7);
+  u.core.material.opacity = u.k;
+  u.glow.material.opacity = 0.5 * u.k * pulse;
+  clearLine.visible = u.k > 0.01;
+}
+
 // ANEL DO DRIBLE: a cada drible novo (de qualquer jogador) um anel da cor do drible se abre no chão, sob os pés
 const dribRings = [], dribSeen = new WeakMap();
 function dribFxTick() {
@@ -7560,6 +7622,18 @@ function cpuAgent(E, dt) {
 
   // 1) ATAQUE COM A BOLA
   if (holdingTeam === myTeam && B.owner === E) {
+    // LIMPAR A BOLA: depois de recuperar a posse, leva para trás da linha de 3 antes de atacar
+    if (mustClear(E)) {
+      if (!E.plan || E.plan.mode !== 'clear') {
+        let tx, ty;
+        if (E.y < HY) { tx = HX + Math.sign(E.x - HX || 1) * (ARC + 34); ty = Math.max(40, E.y); }   // canto: sai pela lateral
+        else { const a = Math.atan2(E.y - HY, E.x - HX); tx = HX + Math.cos(a) * (ARC + 40); ty = HY + Math.sin(a) * (ARC + 40); }
+        E.plan = { tx: cl(tx, 30, W - 30), ty: cl(ty, 30, H - 30), c: null, mode: 'clear' };
+      }
+      locomoteEntity(E, E.plan.tx - E.x, E.plan.ty - E.y, 150, dt);
+      return;
+    }
+    if (E.plan && E.plan.mode === 'clear') E.plan = null;   // limpou: escolhe a jogada normal
     if (!E.plan) {
       const roll = R();
       // plano de ataque pela classe: [até aqui = perímetro (3), até aqui = meia distância, resto = infiltração]
@@ -7709,6 +7783,7 @@ function updatePhysicsStep(dt) {
   }
 
   rimShake = Math.max(0, rimShake - dt * 3.5);
+  clearStep();                                   // regra de limpar a bola
 
   for (const o of ents()) {
     const prevAir = o.dunk > 0 || o.layup > 0 || o.block > 0 || o.lock > 0;
@@ -7987,6 +8062,7 @@ function updatePhysicsStep(dt) {
         B.owner = w;
         B.passer = null; B.claim = null;
         poss = teamOf(w);
+        onPossessionPickup(w);                     // troca de posse no meio da jogada: precisa limpar a bola
         plan = null; w.plan = null;
         updateScorebug();
       }
@@ -9728,6 +9804,7 @@ function drawVerticalShotMeter(x, y, progress) {
     if (sWin.contest.handUp) tags.push(['MÃO NA CARA', false]);
     else if (sWin.contest.faceUp) tags.push(['MARCADO', false]);
     if (sWin.d > ARC + 40) tags.push(['TRÊS PROFUNDO', false]);
+    if (mustClear(P)) tags.unshift(['LIMPE A BOLA', false]);   // arremessar agora seria violação
     if ((P.heat || 0) >= 2) tags.push(['EM CHAMAS x' + P.heat, true]);
     else if ((P.heat || 0) <= -2) tags.push(['MÃO FRIA', false]);
     smCtx.font = '700 10px "Segoe UI", Figtree, sans-serif';
@@ -10061,6 +10138,7 @@ function loop(now) {
   if (window.fpsTick) window.fpsTick(now);
   dribHudTick();
   dribFxTick();
+  clearLineTick(now / 1000);
   requestAnimationFrame(loop);
 }
 
@@ -11130,7 +11208,7 @@ requestAnimationFrame(loop);
    ============================================================================ */
 (function () {
   const KEY = 'aerohoop_settings_v2';
-  const cfg = { mode: 'auto', sens: 1, size: 1, res: 55, fx: true, mb: 0 };
+  const cfg = { mode: 'auto', sens: 1, size: 1, res: 55, fx: true, mb: 0, sprint: 'toggle' };   // sprint: 'toggle' (trava) ou 'hold' (segurar)
   try { Object.assign(cfg, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
   cfg.res = cl(Number(cfg.res) || 100, 25, 100);
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch (e) {} };
@@ -11154,7 +11232,7 @@ requestAnimationFrame(loop);
     down.delete(code);
     dispatchEvent(new KeyboardEvent('keyup', { code, key: code, bubbles: true, cancelable: true }));
   }
-  const releaseAll = () => { for (const c of [...down]) kup(c); };
+  const releaseAll = () => { for (const c of [...down]) kup(c); const sb = ui.querySelector('.tb-sprint'); if (sb) sb.classList.remove('lock'); };
 
   /* ---- modo (auto / pc / celular) ---- */
   const hintEl = document.querySelector('.replay-skip-hint');
@@ -11209,12 +11287,32 @@ requestAnimationFrame(loop);
     cfg, applyMode, applyRes, applyMb, goFull, isTouchDevice,
     setMode: m => { cfg.mode = m; save(); applyMode(); },
     setSens: v => { cfg.sens = cl(+v || 1, 0.5, 2); save(); },
-    setSize: v => { cfg.size = cl(+v || 1, 0.8, 1.3); save(); ui.style.setProperty('--ts', cfg.size); }
+    setSize: v => { cfg.size = cl(+v || 1, 0.8, 1.3); save(); ui.style.setProperty('--ts', cfg.size); },
+    setSprintMode: m => { cfg.sprint = m === 'hold' ? 'hold' : 'toggle'; save(); if (window.setSprintLock) setSprintLock(false); }
   };
 
   /* ---- botões de ação (segurar = tecla pressionada) ---- */
+  // CORRIDA TRAVADA: no modo 'toggle' um toque liga o sprint e outro desliga, deixando o dedo livre
+  // para apertar PULO/TIRO junto (enterrada); o botão brilha enquanto estiver travado
+  const sprintBtn = ui.querySelector('.tb-sprint');
+  window.setSprintLock = on => {
+    if (!sprintBtn) return;
+    sprintBtn.classList.toggle('lock', !!on);
+    if (on) kdown('ShiftLeft'); else kup('ShiftLeft');
+  };
   ui.querySelectorAll('.tbtn').forEach(btn => {
     const code = btn.dataset.k;
+    if (btn === sprintBtn) {
+      btn.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        if (cfg.sprint !== 'hold') { setSprintLock(!down.has(code)); return; }
+        try { btn.setPointerCapture(e.pointerId); } catch (_) {} btn.classList.add('on'); kdown(code);
+      });
+      const upS = () => { if (cfg.sprint === 'hold') { btn.classList.remove('on'); kup(code); } };
+      for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) btn.addEventListener(ev, upS);
+      btn.addEventListener('contextmenu', e => e.preventDefault());
+      return;
+    }
     btn.addEventListener('pointerdown', e => { e.preventDefault(); try { btn.setPointerCapture(e.pointerId); } catch (_) {} btn.classList.add('on'); kdown(code); });
     const up = e => { btn.classList.remove('on'); kup(code); };
     for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) btn.addEventListener(ev, up);
@@ -11746,6 +11844,8 @@ requestAnimationFrame(loop);
         modeRow,
         slider({ label: 'Sensibilidade do toque', min: 0.5, max: 2, step: 0.05, unit: '×', get: () => M.cfg.sens, set: v => M.setSens(v), hint: 'Multiplica a sensibilidade X/Y da câmera ao arrastar o dedo.', cls: 'cfg-mob-only' }),
         slider({ label: 'Tamanho dos botões', min: 0.8, max: 1.3, step: 0.05, unit: '×', get: () => M.cfg.size, set: v => M.setSize(v), hint: 'Botões de toque e joystick.', cls: 'cfg-mob-only' }),
+        seg('Botão de corrida', [['toggle', 'Travar (toque)'], ['hold', 'Segurar']], () => M.cfg.sprint || 'toggle', v => M.setSprintMode(v),
+          'Travar: um toque liga o sprint e outro desliga, deixando o dedo livre para PULO/TIRO (enterrada).', 'cfg-mob-only'),
         toggle('Barra de controles', () => !$('controls-bar').classList.contains('hidden'), v => window.toggleControls(v), 'Dicas de teclas na parte de baixo da tela.', null, ['Visível', 'Oculta']),
         toggle('Horário', () => !isNight(), v => window.setDayNight && window.setDayNight(!v), 'Também no botão ☀/🌙 do canto esquerdo.', null, ['Dia', 'Noite'])
       ),
@@ -12057,6 +12157,10 @@ html .tbtn {
   text-shadow: 0 1px 2px rgba(0,0,0,.7);
 }
 html .tbtn.on { background: radial-gradient(circle at 35% 25%, rgba(255,255,255,.5), rgba(109,0,26,.75) 50%, #450010); border-color: #fff; }
+/* sprint travado: verde brilhante pulsando + selo TRAVADO */
+html .tbtn.tb-sprint.lock { background: radial-gradient(circle at 35% 25%, rgba(255,255,255,.55), rgba(62,207,142,.8) 50%, #0f5132); border-color: #b6ffd9; animation: sprintLock 1s ease-in-out infinite; }
+html .tbtn.tb-sprint.lock::after { content: 'TRAVADO'; position: absolute; bottom: calc(-16px * var(--ts)); left: 50%; transform: translateX(-50%); font-size: calc(9px * var(--ts)); letter-spacing: .1em; color: #b6ffd9; text-shadow: 0 1px 3px #000; }
+@keyframes sprintLock { 50% { box-shadow: 0 0 22px rgba(62,207,142,.95), inset 0 1px 0 rgba(255,255,255,.5); } }
 html .tbtn.main { background: radial-gradient(circle at 35% 25%, rgba(255,255,255,.6), #8f0b27 45%, #6D001A 85%); border-color: rgba(255,255,255,.8); font-size: calc(17px * var(--ts)); }
 html #joy-base { background: radial-gradient(circle at 35% 25%, rgba(255,255,255,.2), rgba(109,0,26,.25) 55%, rgba(0,0,0,.7)); border: 1.5px solid rgba(255,255,255,.3); box-shadow: inset 0 1px 0 rgba(255,255,255,.4); }
 html #joy-knob { background: radial-gradient(circle at 35% 28%, #ffffff, #8f0b27 55%, #6D001A); border: 1.5px solid rgba(255,255,255,.7); box-shadow: 0 4px 14px rgba(0,0,0,.7); }
