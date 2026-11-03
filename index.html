@@ -556,17 +556,26 @@ body.in-menu #touch-ui {
 }
 .start-desc { margin: -4px 0 2px; color: var(--ink-dim); font-size: 14px; line-height: 1.5; }
 
-#mode-sel {
+#mode-sel, .diff-pill {
   display: flex; gap: 4px; padding: 4px; border-radius: 999px;
   background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.18);
   box-shadow: inset 0 2px 5px rgba(0,0,0,0.6);
 }
+#diff-sel {
+  display: flex; align-items: center; gap: 10px;
+}
+.diff-lbl {
+  font: 700 10px var(--font); letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink-dim); white-space: nowrap; padding-left: 6px;
+}
+.diff-pill { flex: 1; }
 .seg-opt {
   flex: 1; padding: 9px 0; border: 0; border-radius: 999px; cursor: pointer;
   background: transparent; color: var(--ink-dim);
-  font: 600 12px var(--font); letter-spacing: 0.16em; text-transform: uppercase;
+  font: 600 12px var(--font); letter-spacing: 0.14em; text-transform: uppercase;
   transition: all 0.18s ease;
 }
+.diff-pill .seg-opt { padding: 7px 0; font-size: 11px; letter-spacing: 0.12em; }
 .seg-opt:hover { color: #fff; }
 .seg-opt.primary {
   color: #fff;
@@ -1117,7 +1126,17 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
     <div id="mode-sel">
       <button class="seg-opt primary mode-opt" data-mode="1v1" onclick="setMode('1v1')">1v1</button>
       <button class="seg-opt mode-opt" data-mode="2v2" onclick="setMode('2v2')">2v2</button>
+      <button class="seg-opt mode-opt" data-mode="coop" onclick="setMode('coop')">2v2 Co-op</button>
       <button class="seg-opt mode-opt" data-mode="train" onclick="setMode('train')">Treino</button>
+    </div>
+
+    <div id="diff-sel">
+      <span class="diff-lbl">Bots (IA)</span>
+      <div class="diff-pill">
+        <button class="seg-opt diff-opt" data-diff="easy" onclick="setDiff('easy')">Fácil</button>
+        <button class="seg-opt primary diff-opt" data-diff="medium" onclick="setDiff('medium')">Médio</button>
+        <button class="seg-opt diff-opt" data-diff="hard" onclick="setDiff('hard')">Difícil / Pro</button>
+      </div>
     </div>
 
     <button class="btn-cta" id="btn-start-single" onclick="startSinglePlayerGame()">
@@ -1252,8 +1271,8 @@ body.mobile #wpanel { top: calc(54px + env(safe-area-inset-top, 0px)); bottom: a
 <div class="hud" id="controls-bar">
   <div class="key-hint"><span class="key-badge" data-acts="moveF,moveL,moveB,moveR">WASD</span> Mover</div>
   <div class="key-hint"><span class="key-badge" data-acts="sprint">SHIFT</span> Correr / Enterrar</div>
-  <div class="key-hint"><span class="key-badge" data-acts="jump">ESPAÇO</span> Pular / Toco / Arremessar</div>
-  <div class="key-hint"><span class="key-badge" data-acts="pass">G</span> Passar (2v2)</div>
+  <div class="key-hint"><span class="key-badge" data-acts="jump">ESPAÇO</span> Pular / Arremessar / Pedir Ponte</div>
+  <div class="key-hint"><span class="key-badge" data-acts="pass">G</span> Passar / Ponte Aérea (2v2)</div>
   <div class="key-hint"><span class="key-badge" data-acts="stance" data-prefix="SEGURAR ">SEGURAR C</span> Drible (+ WASD)</div>
   <div class="key-hint"><span class="key-badge" data-acts="cross">Q</span> Crossover</div>
   <div class="key-hint"><span class="key-badge" data-acts="camLock">L</span> Câmera na bola</div>
@@ -5095,6 +5114,9 @@ const STATES = {
   DUNK: 'DUNK',
   BLOCK: 'BLOCK',
   STEAL: 'STEAL',
+  PASS: 'PASS',
+  PUMP_FAKE: 'PUMP_FAKE',
+  PIVOT_HOLD: 'PIVOT_HOLD',
   LANDING: 'LANDING',
   CELEBRATE: 'CELEBRATE',
   EXHAUSTED: 'EXHAUSTED'
@@ -5104,7 +5126,8 @@ const STATE_PT = {
   DEF_STANCE: 'DEFESA', DEF_SHUFFLE: 'SLIDE', DRIBBLE: 'DRIBLE', CROSSOVER: 'CROSSOVER',
   BETWEEN_LEGS: 'ENTRE AS PERNAS', BEHIND_BACK: 'POR TRÁS', STEP_BACK: 'STEP-BACK', SPIN_MOVE: 'GIRO',
   GATHER: 'ARMANDO', JUMP_SHOT: 'ARREMESSO', LAYUP: 'BANDEJA', DUNK: 'ENTERRADA', BLOCK: 'TOCO',
-  STEAL: 'ROUBO', LANDING: 'ATERRISSAGEM', CELEBRATE: 'COMEMORAÇÃO', EXHAUSTED: 'EXAUSTO'
+  STEAL: 'ROUBO', PASS: 'PASSE', PUMP_FAKE: 'FINTA', PIVOT_HOLD: 'BOLA PRESA (PIVÔ)',
+  LANDING: 'ATERRISSAGEM', CELEBRATE: 'COMEMORAÇÃO', EXHAUSTED: 'EXAUSTO'
 };
 
 let P, A, B, poss, score, msgT = 0, charge, fl, deadT, nextP, over, plan;
@@ -5116,6 +5139,94 @@ let P, A, B, poss, score, msgT = 0, charge, fl, deadT, nextP, over, plan;
 let MODE = '1v1';
 let TM = null, A2 = null;
 let trainShots = 0;
+
+/* ============================================================================
+   2v2 CO-OP (PvE): 2 humanos no MESMO time (P = anfitrião, TM = convidado) contra 2 bots (A, A2).
+   O anfitrião simula tudo; o convidado só envia teclas e recebe o estado (mesma arquitetura do 1v1 online),
+   mas sem espelhar times/posse: o convidado controla o TM e vê o mesmo placar/posse do anfitrião.
+   ============================================================================ */
+let COOP = false;                                           // modo escolhido no menu (CO-OP)
+const netOn = () => !!(NET.live || NET.role === 'guest');   // conexão ativa (no convidado NET.live nunca é true)
+const coopLive = () => COOP && MODE === '2v2' && netOn();
+// entidade controlada pelo jogador remoto (no anfitrião): o TM no co-op, o A no versus online
+const remoteEnt = () => coopLive() ? TM : A;
+// humano = controlado por uma pessoa (local ou remoto); o resto é bot
+const isHumanEnt = o => !!o && (o === P || (NET.live && o === remoteEnt()));
+
+/* ============================================================================
+   DIFICULDADE DOS BOTS (vale para 1v1 e 2v2): reação defensiva, precisão ofensiva e inteligência tática.
+   "medio" reproduz o comportamento original do jogo; "facil" e "pro" escalam todos os parâmetros abaixo.
+   ============================================================================ */
+const DIFFS = {
+  easy: {
+    label: 'FÁCIL',
+    // reação defensiva
+    react: 0.30,      // atraso (s) com que o marcador enxerga a posição do portador (acompanhar dribles)
+    defSpd: 0.86,     // velocidade máxima na defesa
+    stealRate: 0.6,   // frequência dos botes (1 = original)
+    stealSkill: 0.6,  // chance de o bote pegar a bola
+    contest: 0.4,     // frequência com que sobe a mão para contestar o arremesso
+    block: 0.5,       // chance de toco
+    // precisão ofensiva
+    shotWin: 0.75,    // janela verde dos arremessos da CPU
+    shotAcc: -0.08,   // bônus/penalidade na chance de acerto
+    timeNoise: 0.26,  // erro de timing do arremesso (maior = pior)
+    sprint: 0.90,     // velocidade ao atacar (uso de sprint)
+    drive: 0.12,      // < 0 favorece infiltração no garrafão; > 0 evita
+    finish: 0.90,     // alcance para bandeja/enterrada
+    dunk: 0,          // chance de enterrar quando está no alcance
+    stamina: 14,      // recuperação de fôlego (por s)
+    // inteligência tática (2v2)
+    passIQ: 0, passRate: 0.5, intercept: 0.10, lane: 0, paintHelp: 0,
+    // alley-oop dos bots
+    oopReact: 0.62, oopAcc: 0.55, oopCut: 0
+  },
+  medium: {
+    label: 'MÉDIO',
+    react: 0.10, defSpd: 1.0, stealRate: 1.0, stealSkill: 1.0, contest: 1.0, block: 1.0,
+    shotWin: 1.0, shotAcc: 0, timeNoise: 0.18, sprint: 1.0, drive: 0, finish: 1.0, dunk: 0, stamina: 22,
+    passIQ: 1, passRate: 1.0, intercept: 0.35, lane: 0.15, paintHelp: 0,
+    oopReact: 0.38, oopAcc: 0.85, oopCut: 0.22
+  },
+  hard: {
+    label: 'PRO',
+    react: 0.0, defSpd: 1.12, stealRate: 1.35, stealSkill: 1.25, contest: 1.8, block: 1.4,
+    shotWin: 1.3, shotAcc: 0.06, timeNoise: 0.10, sprint: 1.14, drive: -0.12, finish: 1.12, dunk: 0.7, stamina: 30,
+    passIQ: 2, passRate: 1.8, intercept: 0.70, lane: 0.40, paintHelp: 1,
+    oopReact: 0.20, oopAcc: 0.97, oopCut: 0.65
+  }
+};
+let DIFF = 'medium';
+try { const d = localStorage.getItem('aerohoop_diff'); if (DIFFS[d]) DIFF = d; } catch (e) {}
+const dif = () => DIFFS[DIFF];
+function setDiff(k) {
+  if (!DIFFS[k]) return;
+  DIFF = k;
+  try { localStorage.setItem('aerohoop_diff', k); } catch (e) {}
+  document.querySelectorAll('.diff-opt').forEach(b => b.classList.toggle('primary', b.dataset.diff === DIFF));
+  if (typeof refreshNames === 'function') refreshNames();
+  if (typeof NET !== 'undefined' && NET.role === 'host' && NET.live && typeof netSend === 'function') netSend({ t: 'diff', d: DIFF });
+}
+
+// Histórico curto de posições: o defensor "enxerga" o portador com atraso df.react (tempo de reação)
+const HIST_N = 64;   // ~0.53 s a 120 Hz
+function histPush(o) {
+  const h = o._hx || (o._hx = new Float32Array(HIST_N * 2));
+  const i = o._hi = ((o._hi | 0) + 1) % HIST_N;
+  h[i * 2] = o.x; h[i * 2 + 1] = o.y;
+  o._hn = Math.min(HIST_N, (o._hn | 0) + 1);
+}
+function lagPos(o, delay) {
+  const n = Math.min(o._hn | 0, Math.round(delay / FIXED_DT), HIST_N - 1);
+  if (n <= 0) return o;
+  const i = (((o._hi | 0) - n) % HIST_N + HIST_N) % HIST_N;
+  return { x: o._hx[i * 2], y: o._hx[i * 2 + 1], vx: o.vx, vy: o.vy };
+}
+let STEP_N = 0;      // contador de passos de física (evita processar a mesma ação duas vezes por passo)
+// PONTE AÉREA (alley-oop): janela aberta pelo receptor, e a jogada sincronizada em andamento
+let oopWin = null;   // { recv, t, shown }  t = tempo restante da janela (negativo = tolerância após expirar)
+let oopRun = null;   // alley-oop em andamento (passador, receptor, tempos, ponto de lançamento)
+let oopCool = 0;     // recarga entre tentativas
 
 function ents() { return MODE === 'train' ? [P] : (TM ? [P, A, TM, A2] : [P, A]); }
 function teamOf(o) { return (o === P || (TM && o === TM)) ? 'p' : 'a'; }
@@ -5218,11 +5329,16 @@ function cpuBuild(id) {
 // distribui bases e pontos: você = a escolhida; online o adversário usa a dele; CPUs sorteiam
 function assignClasses() {
   if (P) { P.cls = myClass; applyBuild(P, myBuilds[myClass]); }
+  const co = coopLive();
   if (A) {
-    A.cls = NET.live ? (NET.opCls || 'driblador') : randomClass();
-    applyBuild(A, NET.live ? NET.opPts : cpuBuild(A.cls));
+    A.cls = (NET.live && !co) ? (NET.opCls || 'driblador') : randomClass();
+    applyBuild(A, (NET.live && !co) ? NET.opPts : cpuBuild(A.cls));
   }
-  if (TM) { TM.cls = randomClass(); applyBuild(TM, cpuBuild(TM.cls)); }
+  if (TM) {
+    // co-op: o parceiro é o amigo humano (usa a base e os pontos dele); senão é um bot sorteado
+    TM.cls = (NET.live && co) ? (NET.opCls || 'driblador') : randomClass();
+    applyBuild(TM, (NET.live && co) ? NET.opPts : cpuBuild(TM.cls));
+  }
   if (A2) { A2.cls = randomClass(); applyBuild(A2, cpuBuild(A2.cls)); }
 }
 
@@ -5254,6 +5370,9 @@ function mkPlayer(x, y) {
     layup: 0, layupType: 0, layupScored: false,
     landing: 0, landingImpact: 0,
     stopT: 0, pivotT: 0,
+    dribbled: false, deadDrib: false, pivX: x, pivY: y, pivFoot: -1,
+    pump: 0, passHoldT: 0,
+    passAnim: 0, passDur: 0.36, passKind: 'chest', passDir: 1, passPend: null,
     celeb: 0, celebType: 'cheer',
     state: STATES.IDLE,
     stateTime: 0
@@ -5312,19 +5431,31 @@ function setNames(me, op) {
 }
 function refreshNames() {
   const sfx = MODE === '2v2' ? ' +CPU' : '';
+  const cpuName = 'CPU ' + dif().label;
+  if (coopLive()) {
+    // co-op: a dupla humana (você + amigo) contra 2 bots
+    setNames((MY_NICK || 'PLAYER') + ' + ' + (NET.opNick || 'AMIGO'), cpuName + ' x2');
+    return;
+  }
   const me = (MY_NICK || 'PLAYER') + sfx;
-  const op = MODE === 'train' ? 'TENTATIVAS' : ((NET.role && NET.opNick ? NET.opNick : 'CPU PRO') + sfx);
+  const op = MODE === 'train' ? 'TENTATIVAS' : ((NET.role && NET.opNick ? NET.opNick : cpuName) + sfx);
   setNames(me, op);
 }
 function setOpNick(n) { NET.opNick = n; refreshNames(); }
-function netIdleText() { return MODE === '2v2' ? '2v2 COM UM AMIGO (+1 CPU CADA)' : '1v1 COM UM AMIGO'; }
+function netIdleText() { return COOP && MODE === '2v2' ? 'CO-OP 2v2: VOCÊ + AMIGO VS 2 CPUs' : (MODE === '2v2' ? '2v2 COM UM AMIGO (+1 CPU CADA)' : '1v1 COM UM AMIGO'); }
 function setModeUI() {
-  document.querySelectorAll('.mode-opt').forEach(b => b.classList.toggle('primary', b.dataset.mode === MODE));
+  const key = (COOP && MODE === '2v2') ? 'coop' : MODE;
+  document.querySelectorAll('.mode-opt').forEach(b => b.classList.toggle('primary', b.dataset.mode === key));
+  document.querySelectorAll('.diff-opt').forEach(b => b.classList.toggle('primary', b.dataset.diff === DIFF));
+  const ds = document.getElementById('diff-sel'); if (ds) ds.style.display = MODE === 'train' ? 'none' : '';
   const s = document.getElementById('sub-single');
-  if (s) s.textContent = MODE === 'train' ? 'TREINO DE ARREMESSO' : (MODE === '2v2' ? '2v2 VS CPU (+1 CPU DE PARCEIRO)' : '1v1 VS CPU');
+  if (s) s.textContent = MODE === 'train' ? 'TREINO DE ARREMESSO' : (COOP && MODE === '2v2' ? 'CO-OP SOLO (PARCEIRO CPU) · AMIGO: CRIE SALA' : (MODE === '2v2' ? '2v2 VS CPU (+1 CPU DE PARCEIRO)' : '1v1 VS CPU'));
   if (!NET.role) netStatus(netIdleText());
 }
-function setMode(m) { MODE = m; setModeUI(); refreshNames(); }
+function setMode(m) {
+  if (m === 'coop') { MODE = '2v2'; COOP = true; } else { MODE = m; COOP = false; }
+  setModeUI(); refreshNames();
+}
 function confirmNick() {
   const v = (document.getElementById('nick-input').value || '').trim().slice(0, 12);
   if (!v) { document.getElementById('nick-input').focus(); return; }
@@ -5334,6 +5465,7 @@ function confirmNick() {
   refreshNames();
 }
 (function () {
+  setModeUI();
   if (MY_NICK) { refreshNames(); return; }
   const m = document.getElementById('nick-modal'); if (m) m.style.display = 'flex';
   const i = document.getElementById('nick-input');
@@ -5359,8 +5491,8 @@ function applyRemoteCustomization(p, data) {
   if (data.f) applyFace(p, data.f);
   if (data.c) applyRemoteClothes(p, data.c);
   if (data.n) setOpNick(String(data.n || 'ADVERSÁRIO').slice(0, 12));
-  if (data.k && CLASSES[data.k]) { NET.opCls = data.k; if (A && NET.role === 'host') A.cls = data.k; }   // no convidado chega pelo snapshot
-  if (data.kp) { NET.opPts = cleanBuild(data.kp); if (A && NET.role === 'host') applyBuild(A, NET.opPts); }   // pontos validados (teto)
+  if (data.k && CLASSES[data.k]) { NET.opCls = data.k; if (remoteEnt() && NET.role === 'host') remoteEnt().cls = data.k; }   // no convidado chega pelo snapshot
+  if (data.kp) { NET.opPts = cleanBuild(data.kp); if (remoteEnt() && NET.role === 'host') applyBuild(remoteEnt(), NET.opPts); }   // pontos validados (teto)
 }
 
 function netSendCustomization() {
@@ -5387,6 +5519,14 @@ function netClose() {
   try {
     if (window.applyPlayerShirt) window.applyPlayerShirt(mA, 'estrela');
     if (window.setPlayerPantsMode) setPlayerPantsMode(mA, 'style:neveryoung');
+  } catch (e) {}
+  try {   // co-op: devolve ao parceiro CPU a aparência original
+    if (coopLive()) {
+      applyFace(mTM, { skin: 4, hair: 'twists', hcol: 0, bcol: 0, beard: 'short', eye: 1 });
+      if (window.applyPlayerShirt) window.applyPlayerShirt(mTM, 'aranha');
+      setPlayerShoes(mTM, 'aj11');
+      if (window.setPlayerPantsMode) setPlayerPantsMode(mTM, 'style:neveryoung');
+    }
   } catch (e) {}
   clearTimeout(NET.connTimer);
   try { if (NET.conn) NET.conn.close(); } catch (e) {}
@@ -5521,9 +5661,9 @@ function netSetupHost(c) {
       NET.rin.K[m.c] = m.t === 'd';
       withRemote(() => (m.t === 'd' ? gameKeyDown(m.c) : gameKeyUp(m.c)));
     } else if (m.t === 'rq') reset();
-    else if (m.t === 'custom') applyRemoteCustomization(mA, m);
-    else if (m.t === 'face') applyFace(mA, m.f);
-    else if (m.t === 'clothes') applyRemoteClothes(mA, m.c);
+    else if (m.t === 'custom') applyRemoteCustomization(remoteModel(), m);
+    else if (m.t === 'face') applyFace(remoteModel(), m.f);
+    else if (m.t === 'clothes') applyRemoteClothes(remoteModel(), m.c);
     else if (m.t === 'nick') setOpNick(String(m.n || 'ADVERSÁRIO').slice(0, 12));
   });
   // Dispara sincronização de personalização completa (face, roupas, nick) com repetição garantida
@@ -5531,10 +5671,19 @@ function netSetupHost(c) {
   setTimeout(netSendCustomization, 300);
   setTimeout(netSendCustomization, 800);
   setTimeout(netSendCustomization, 1600);
-  netSend({ t: 'mode', m: MODE });
+  netSend({ t: 'mode', m: MODE, c: COOP ? 1 : 0, d: DIFF });
 }
 
+// aparência do jogador humano remoto: o TM no co-op, o A no versus online
+const remoteModel = () => coopLive() ? mTM : mA;
+
 function swapRoles() {
+  if (coopLive()) {
+    // co-op: mesmo time, então só troca quem é o "P" (nada de espelhar posse, placar ou lances)
+    const t = P; P = TM; TM = t;
+    NET.swapped = !NET.swapped;
+    return;
+  }
   const t = P; P = A; A = t;
   if (TM) { const t2 = TM; TM = A2; A2 = t2; }
   poss = poss === 'p' ? 'a' : (poss === 'a' ? 'p' : poss);
@@ -5578,12 +5727,15 @@ function netTick(dt) {
     for (const k in full) { let v = full[k]; if (typeof v === 'number') v = Math.round(v * 1000) / 1000; if (last[k] !== v) { last[k] = v; d[k] = v; } }
     return d;
   };
+  const eid = o => !o ? null : (o === P ? 'p' : (o === A ? 'a' : (TM && o === TM ? 't' : (A2 && o === A2 ? 'u' : null))));
   netSend({
     t: 's', P: dl('P', P), A: dl('A', A), B: dl('B', B),
     TM: dl('TM', TM), A2: dl('A2', A2),
-    bo: !B.owner ? null : (B.owner === P ? 'p' : (B.owner === A ? 'a' : (TM && B.owner === TM ? 't' : (A2 && B.owner === A2 ? 'u' : null)))),
+    bo: eid(B.owner),
     poss, sc: { p: score.p, a: score.a }, dt: deadT, rs: rimShake, ct: clearTeam,
-    ch: NET.rcharge ? NET.rcharge.t : null
+    ch: NET.rcharge ? NET.rcharge.t : null,
+    hc: charge ? charge.t : null,                                   // medidor do anfitrião (animação de arremesso no co-op)
+    oo: oopWin ? { r: eid(oopWin.recv), t: Math.round(oopWin.t * 100) / 100 } : null   // janela da ponte aérea
   });
 }
 
@@ -5607,6 +5759,7 @@ function netSetupGuest(c) {
 }
 
 function netMapMsg(m) {
+  if (coopLive()) return m;                 // co-op: mesmo time, mensagens valem iguais para os dois
   if (m === 'SUA POSSE!') return 'POSSE DO ADVERSÁRIO';
   if (m === 'POSSE DA CPU' || m === 'POSSE RECUPERADA!') return m === 'POSSE DA CPU' ? 'SUA POSSE!' : 'POSSE DO ADVERSÁRIO';
   if (m.startsWith('CPU')) return 'VOCÊ' + m.slice(3);
@@ -5626,20 +5779,22 @@ function netGuestData(m) {
   if (m.t === 's') {
     const S = NET.sf || (NET.sf = {});
     for (const k of ['P', 'A', 'B', 'TM', 'A2']) { if (m[k] === null) S[k] = null; else if (m[k]) S[k] = Object.assign(S[k] || {}, m[k]); }
-    for (const k of ['bo', 'poss', 'sc', 'dt', 'rs', 'ch']) S[k] = m[k];
+    for (const k of ['bo', 'poss', 'sc', 'dt', 'rs', 'ch', 'hc', 'oo']) S[k] = m[k];
     NET.snap = S; NET.fresh = true; NET.snapT = performance.now();
   }
-  else if (m.t === 'custom') applyRemoteCustomization(mA, m);
-  else if (m.t === 'face') applyFace(mA, m.f);
-  else if (m.t === 'clothes') applyRemoteClothes(mA, m.c);
+  else if (m.t === 'custom') applyRemoteCustomization(remoteModel(), m);
+  else if (m.t === 'face') applyFace(remoteModel(), m.f);
+  else if (m.t === 'clothes') applyRemoteClothes(remoteModel(), m.c);
   else if (m.t === 'nick') setOpNick(String(m.n || 'ADVERSÁRIO').slice(0, 12));
-  else if (m.t === 'mode') { MODE = m.m === '2v2' ? '2v2' : '1v1'; setModeUI(); refreshNames(); if (inStartMenu) startSinglePlayerGame(); }
+  else if (m.t === 'diff' && DIFFS[m.d]) { DIFF = m.d; setModeUI(); refreshNames(); }
+  else if (m.t === 'mode') { MODE = m.m === '2v2' ? '2v2' : '1v1'; COOP = MODE === '2v2' && !!m.c; if (DIFFS[m.d]) DIFF = m.d; setModeUI(); refreshNames(); if (inStartMenu) startSinglePlayerGame(); }
   else if (m.t === 'say') say(m.own ? m.m : netMapMsg(m.m), m.d, m.g, true);
   else if (m.t === 'reset') { over = false; $('ov').style.display = 'none'; }
   else if (m.t === 'over') {
     over = true;
     $('ov').style.display = 'flex';
-    $('ov-title').textContent = m.win ? 'VOCÊ VENCEU!' : 'ADVERSÁRIO VENCEU!';
+    if (coopLive()) $('ov-title').textContent = m.win ? 'VITÓRIA DA DUPLA!' : 'CPU VENCEU!';
+    else $('ov-title').textContent = m.win ? 'VOCÊ VENCEU!' : 'ADVERSÁRIO VENCEU!';
     $('ov-sub').textContent = 'PLACAR FINAL: ' + m.me + ' x ' + m.op;
   }
 }
@@ -5663,24 +5818,42 @@ function guestStep(dt) {
     }
   };
   // Papéis trocados: o convidado sempre se vê como "P" (jogador principal)
-  ap(P, sn.A, ['x', 'y']);
-  ap(A, sn.P, ['x', 'y']);
-  if (TM && sn.TM && sn.A2) { ap(TM, sn.A2, ['x', 'y']); ap(A2, sn.TM, ['x', 'y']); }
+  // Co-op: mesmo time do anfitrião — o convidado (P local) é o TM do anfitrião e o anfitrião aparece como TM
+  const co = coopLive();
+  if (co) {
+    ap(P, sn.TM, ['x', 'y']);
+    ap(A, sn.A, ['x', 'y']);
+    if (TM && sn.P && sn.A2) { ap(TM, sn.P, ['x', 'y']); ap(A2, sn.A2, ['x', 'y']); }
+  } else {
+    ap(P, sn.A, ['x', 'y']);
+    ap(A, sn.P, ['x', 'y']);
+    if (TM && sn.TM && sn.A2) { ap(TM, sn.A2, ['x', 'y']); ap(A2, sn.TM, ['x', 'y']); }
+  }
   ap(B, sn.B, ['x', 'y', 'z']);
-  B.owner = sn.bo === 'p' ? A : (sn.bo === 'a' ? P : (sn.bo === 't' ? A2 : (sn.bo === 'u' ? TM : null)));
-  poss = sn.poss === 'p' ? 'a' : (sn.poss === 'a' ? 'p' : sn.poss);
-  clearTeam = sn.ct === 'p' ? 'a' : (sn.ct === 'a' ? 'p' : null);   // regra de limpar (lado trocado no convidado)
-  score.p = sn.sc.a; score.a = sn.sc.p;
+  // id -> entidade local (co-op: p->TM, t->P, a->A, u->A2 | versus: p->A, a->P, t->A2, u->TM)
+  const gEnt = id => co ? (id === 'p' ? TM : (id === 't' ? P : (id === 'a' ? A : (id === 'u' ? A2 : null))))
+                        : (id === 'p' ? A : (id === 'a' ? P : (id === 't' ? A2 : (id === 'u' ? TM : null))));
+  B.owner = gEnt(sn.bo);
+  poss = co ? sn.poss : (sn.poss === 'p' ? 'a' : (sn.poss === 'a' ? 'p' : sn.poss));
+  clearTeam = co ? sn.ct : (sn.ct === 'p' ? 'a' : (sn.ct === 'a' ? 'p' : null));   // regra de limpar (lado trocado no convidado no versus)
+  if (co) { score.p = sn.sc.p; score.a = sn.sc.a; } else { score.p = sn.sc.a; score.a = sn.sc.p; }
   deadT = sn.dt; rimShake = sn.rs;
   charge = sn.ch == null ? null : { t: sn.ch };
+  NET.hc = sn.hc == null ? null : sn.hc;                                              // medidor do anfitrião
+  oopWin = sn.oo && gEnt(sn.oo.r) ? { recv: gEnt(sn.oo.r), t: sn.oo.t, shown: true } : null;   // janela da ponte aérea (só HUD)
   fl = null;
   { const gH = B.s === 'held' && B.owner === P; P.dr = (gH && K.KeyC) ? 1 : 0; P.dd = (K.KeyC && !gH) ? 1 : 0; }   // postura de C responde na hora no convidado
   if (NET.fresh) { NET.fresh = false; updateScorebug(); updateStaminaHUD(); }
   msgT -= dt;
 }
 
+// co-op: mensagens pessoais do anfitrião (fôlego, medidor, roubos dele) não devem aparecer para o convidado
+const COOP_PERSONAL = /STAMINA|TIMING|ARREMESSO|MIRA|MUITO|MARCADO|CHAMAS|MÃO FRIA|LIMPE|BOLA LIMPA|ROUBADA|ROUBOU|TOCO DE DEFESA/;
 function say(m, t = 1.2, isGreen = false, fromNet = false) {
-  if (NET.live && !fromNet) { netSend({ t: 'say', m, d: t, g: isGreen === 'good' || isGreen === true, own: NET.swapped }); if (NET.swapped) return; }
+  if (NET.live && !fromNet) {
+    if (!(coopLive() && !NET.swapped && COOP_PERSONAL.test(m))) netSend({ t: 'say', m, d: t, g: isGreen === 'good' || isGreen === true, own: NET.swapped });
+    if (NET.swapped) return;
+  }
   const e = $('msg');
   if (!e) return;
   e.textContent = m;
@@ -5715,6 +5888,10 @@ function beyondArc(o) { return o.y < HY ? Math.abs(o.x - HX) > ARC + 2 : Math.hy
 function mustClear(o) { return MODE !== 'train' && !!clearTeam && !!o && teamOf(o) === clearTeam; }
 // alguém pegou a bola solta: se a posse mudou de time e ele está dentro da linha, precisa limpar
 function onPossessionPickup(w) {
+  if (w) {
+    w.dribbled = false; w.deadDrib = false; w.pump = 0; w.passHoldT = 0; w.passPend = null;
+    w.pivX = w.x; w.pivY = w.y;
+  }
   const t = teamOf(w);
   if (MODE !== 'train' && lastPossTeam && t !== lastPossTeam) {
     clearTeam = beyondArc(w) ? null : t;
@@ -5779,6 +5956,11 @@ function startPossession(w) {
   trailHistory.length = 0;
   replayBuffer.length = 0;
   charge = null; fl = null; deadT = 0; plan = null;
+  oopWin = null; oopRun = null; oopCool = 0;                       // nova posse: sem ponte aérea em andamento
+  for (const e of ents()) {
+    e._hn = 0; e.oop = false; e.cutGo = false; e._cutHd = null; e.oopT = 0; e.oopFlub = null; e.holdT = 0; e.spot = null;
+    e.dribbled = false; e.deadDrib = false; e.pivX = e.x; e.pivY = e.y; e.pump = 0; e.passHoldT = 0; e.passAnim = 0; e.passPend = null;
+  }
   if (MODE === 'train') { A.x = HX; A.y = 3000; A.vx = 0; A.vy = 0; } // sem adversario no treino
   updateScorebug();
 }
@@ -5853,8 +6035,20 @@ function face(o, tx, ty) {
   o.fy = (ty - o.y) / l;
 }
 
+// Tempo do medidor de arremesso de qualquer jogador humano (local ou remoto em Co-op / Versus)
+function chargeOf(o) {
+  if (o === P) return charge ? charge.t : null;
+  if (NET.live && o === remoteEnt() && NET.rcharge) return NET.rcharge.t;
+  if (NET.role === 'guest' && NET.snap) {
+    if (coopLive() && o === TM && NET.snap.hc != null) return NET.snap.hc;
+    if (!coopLive() && o === A && NET.snap.hc != null) return NET.snap.hc;
+  }
+  return null;
+}
+
 function resolvePlayerState(o, dt) {
   const isMe = o === P;
+  const chT = chargeOf(o);
   const hasB = B.s === 'held' && B.owner === o;
   const def = poss && ((poss === 'p') !== (teamOf(o) === 'p'));
   const prevState = o.state;
@@ -5864,10 +6058,13 @@ function resolvePlayerState(o, dt) {
   else if (o.layup > 0) next = STATES.LAYUP;
   else if (o.block > 0) next = STATES.BLOCK;
   else if (o.steal > 0) next = STATES.STEAL;
-  else if (hasB && isMe && charge) next = STATES.GATHER;
+  else if (o.passAnim > 0) next = STATES.PASS;
+  else if (o.pump > 0) next = STATES.PUMP_FAKE;
+  else if (hasB && chT != null) next = STATES.GATHER;
   else if (o.lock > 0) next = STATES.JUMP_SHOT;
   else if (o.celeb > 0) next = STATES.CELEBRATE;
   else if (o.landing > 0) next = STATES.LANDING;
+  else if (hasB && o.deadDrib) next = o.pivotT > 0 ? STATES.PIVOT : STATES.PIVOT_HOLD;
   else if (o.spin > 0) next = STATES.SPIN_MOVE;
   else if (o.sb > 0) next = STATES.STEP_BACK;
   else if (o.bb > 0) next = STATES.BEHIND_BACK;
@@ -5902,7 +6099,7 @@ function isInsidePaint(x, y) {
 
 function launchBallisticShot(shooter, who, make, three, isGreen, aimErr = 0, aimYaw = 0) {
   // "hum" = arremesso controlado pelo jogador humano local (companheiros CPU usam a precisao da CPU)
-  const hum = who === 'p' && shooter === P;
+  const hum = (who === 'p' && shooter === P) || (coopLive() && NET.live && shooter === TM);
   // A trajetória é calculada a partir da altura real de soltura; a bola é posicionada nela (antes ela saía mais baixa que o calculado e caía curta)
   const sx = B.x, sy = B.y, sz = Math.max(80, B.z);
   B.z = sz;
@@ -5981,7 +6178,10 @@ function tryStartDunkOrLayup(S) {
   const aimingAtBasket = S !== P || Math.abs(aimErr) < 0.72;
 
   const finK = attrK(S, 'fin');                                 // finalização: enterra/bandeja de mais longe
-  if (S === P && aimingAtBasket && isSprinting && distToRim <= 112 * (1 + 0.15 * finK) && distToRim >= 18) {
+  // bots só enterram nos níveis altos (dunk = chance sorteada a cada finalização); o humano enterra com SHIFT + ESPAÇO
+  const botDunk = S !== P && !isHumanEnt(S) && R() < dif().dunk;
+  const fin = S === P ? 1 : (isHumanEnt(S) ? 1 : dif().finish);   // alcance de finalização dos bots escala com a dificuldade
+  if ((S === P || botDunk) && aimingAtBasket && isSprinting && distToRim <= 112 * (1 + 0.15 * finK) * fin && distToRim >= 18) {
     S.dunk = 0.96;
     S.dunkType = pickVariety(S, 'dunk', 8);
     S.dunkScored = false;
@@ -6000,11 +6200,12 @@ function tryStartDunkOrLayup(S) {
       'REVERSE DUNK!',
       'SHOWTIME WINGS SLAM!'
     ];
-    say(dunkNames[S.dunkType], 1.1, 'good');
+    if (teamOf(S) === teamOf(P)) say(dunkNames[S.dunkType], 1.1, 'good');
+    else say('CPU: ' + dunkNames[S.dunkType], 1.1, 'bad');
     return true;
   }
 
-  if (aimingAtBasket && distToRim <= 88 * (1 + 0.12 * finK) && S.v > 42 && (!S.exhausted || S.stamina >= 10)) {
+  if (aimingAtBasket && distToRim <= 88 * (1 + 0.12 * finK) * fin && S.v > 42 && (!S.exhausted || S.stamina >= 10)) {
     S.layup = 0.78;
     S.layupType = pickVariety(S, 'layup', 8);
     S.layupScored = false;
@@ -6118,7 +6319,8 @@ function shoot(S, t) {
   // A janela verde é a MESMA desenhada na barra (GREEN_CENTER ± GREEN_HALF); a CPU usa uma janela menor
   const sk = shotSkill(S), k3 = attrK(S, 'three');
   const sw = shotWindow(S), base = SHOT_BASE[sw.base], cont = sw.contest;   // base guardada no início da carga
-  const greenHalf = (hum ? GREEN_HALF : 0.063) * sw.w;
+  const bot = !isHumanEnt(S);                                  // bot: precisão escala com a dificuldade
+  const greenHalf = (hum ? GREEN_HALF : 0.063 * (bot ? dif().shotWin : 1)) * sw.w;
   const isGreen = !offTarget && absAimErr <= AIM_OK && Math.abs(t - GREEN_CENTER) <= greenHalf && !S.exhausted;
   const dd = D(S, Df);
   // contestação: marcador com mais toco/impulsão incomoda mais o arremesso
@@ -6136,7 +6338,7 @@ function shoot(S, t) {
           + 0.09 * sk - 0.22 * ct + base.ch + cont.ch + 0.02 * (S.heat || 0) - rangePen - balancePenalty * 0.75, 0.12, 0.96));
   S.shotBase = null;
 
-  const make = !offTarget && (R() < ch);
+  const make = !offTarget && (R() < cl(ch + (bot ? dif().shotAcc : 0), 0.05, 0.99));
   // SEQUÊNCIA: arremessos de quadra seguidos convertidos esquentam a mão (abre a janela); erros esfriam
   const heat0 = S.heat || 0;
   S.heat = make ? Math.min(3, Math.max(0, heat0) + 1) : Math.max(-2, Math.min(0, heat0) - 1);
@@ -6164,6 +6366,7 @@ function shoot(S, t) {
   B.owner = S;
   poss = null;
   S.lock = 0.34;
+  S.deadDrib = false; S.dribbled = false; S.pump = 0; S.passHoldT = 0;
   updateScorebug();
 
   if (hum) {
@@ -6230,28 +6433,521 @@ function tryJumpOrBlockSpace() {
   }
 }
 
-// PASSE (tecla G) para o companheiro de time no 2v2
-function tryPass() {
-  if (!TM || deadT > 0 || over || charge) return;
-  if (B.s !== 'held' || B.owner !== P) return;
-  if (P.lock > 0 || P.dunk > 0 || P.layup > 0) return;
-  passBall(P, TM);
+// PASSE (tecla G):
+// - Durante a animação de arremesso (segurando ESPAÇO ou no windup antes da bola sair da mão):
+//   * Toque rápido (Tap < 0.16s, ou no 1v1/Treino sem aliado) => PUMP FAKE (finta de arremesso + regra de Bola Morta / Pé de Pivô)
+//   * Segurar (Hold >= 0.16s no 2v2) => BAIL OUT PASS (passe de emergência em suspensão cancelando o chute)
+// - Fora do arremesso no 2v2: aciona Ponte Aérea (se janela aberta) ou Passe Contextual (Peito, Picado, Lob ou Por Trás das Costas)
+const PUMP_DUR = 0.44;
+const BAILOUT_HOLD_T = 0.16;
+
+function isInShotCancelWindow(o) {
+  if (!o || B.s !== 'held' || B.owner !== o) return false;
+  if (o === P && charge) return true;
+  if (NET.live && o === remoteEnt() && NET.rcharge) return true;
+  if (fl && fl.phase === 'windup' && fl.shooter === o) return true;
+  return false;
 }
 
-function passBall(from, to) {
+function triggerPumpFake(o) {
+  if (!o || B.s !== 'held' || B.owner !== o) return;
+  if (o === P) charge = null;
+  if (NET.live && o === remoteEnt()) NET.rcharge = null;
+  if (fl && fl.shooter === o) { fl = null; poss = teamOf(o); }
+  o.passHoldT = 0;
+  o.lock = 0;
+  o.pump = PUMP_DUR;
+  // Cancela qualquer drible em andamento para recolher a bola nas duas mãos
+  o.cx = o.sd = o.bb = o.sb = o.spin = 0; o.mvKind = null; o.nextMove = null;
+  face(o, HX, HY);
+
+  // Regra do Basquete Real (Dead Ball / Pivot Foot): se já bateu bola nesta posse, encerra o drible e prende ao pé de pivô
+  if (o.dribbled && !o.deadDrib) {
+    o.deadDrib = true;
+    o.pivX = o.x;
+    o.pivY = o.y;
+    o.pivFoot = o.hand > 0 ? -1 : 1;
+    o.vx = 0; o.vy = 0; o.mv = 0; o.sp = 0;
+  } else if (o.deadDrib) {
+    o.vx = 0; o.vy = 0; o.mv = 0; o.sp = 0;
+  }
+
+  if (o === P || (coopLive() && isHumanEnt(o))) {
+    say(o.deadDrib ? 'PUMP FAKE! (BOLA PRESA — PÉ DE PIVÔ)' : 'PUMP FAKE!', 1.05, 'normal');
+  }
+  if (typeof audio !== 'undefined' && audio.playShoeSqueak) audio.playShoeSqueak(0.45);
+
+  // Defensores próximos (Bots) podem cair na finta e pular para o toco, abrindo espaço para infiltração, chute ou passe!
+  const df = dif();
+  for (const E of oppsOf(o)) {
+    if (isHumanEnt(E) || E.block > 0 || E.dunk > 0 || E.layup > 0 || E.ankle > 0 || E.cd > 0) continue;
+    const dist = D(o, E);
+    if (dist < 72) {
+      const rangeFactor = D(o, { x: HX, y: HY }) < ARC + 35 ? 1.0 : 0.45;
+      const biteChance = cl((0.64 - 0.22 * df.passIQ) * (1 - dist / 95) * rangeFactor, 0.12, 0.68);
+      if (R() < biteChance) {
+        E.block = 0.68;
+        E.lock = 0.22;
+        E.cd = 0.82;
+        E.recover = Math.max(E.recover || 0, 0.36);
+        face(E, o.x, o.y);
+      }
+    }
+  }
+  updateScorebug();
+}
+
+function triggerBailOutPass(from, to) {
+  if (!from || !to || B.s !== 'held' || B.owner !== from) return;
+  const wasAir = (from === P && charge && charge.t > 0.38) || (fl && fl.shooter === from) || from.lock > 0;
+  if (from === P) charge = null;
+  if (NET.live && from === remoteEnt()) NET.rcharge = null;
+  if (fl && fl.shooter === from) { fl = null; poss = teamOf(from); }
+  from.passHoldT = 0;
+  from.pump = 0;
+  from.deadDrib = false;
+  from.dribbled = false;
+  from.lock = wasAir ? 0.42 : 0.26;
+  // Contestação pesada no ar pode gerar leve imprecisão no passe de emergência (escala com o atributo de drible/passe)
+  const Df = oppFor(from);
+  const tightContest = Df && D(from, Df) < 46 && Df.block > 0;
+  const err = tightContest ? cl((1 - 0.45 * attrK(from, 'dri')) * 18, 4, 20) : 0;
+  passBall(from, to, { kind: 'bailout', immediate: true, speed: 1.08, zc: PASS_CHEST_Z, err });
+  say('BAIL OUT PASS!', 1.05, 'good');
+}
+
+function tryPass() {
+  const to = partnerOf(P);
+  if (deadT > 0 || over) return;
+  if (B.s !== 'held' || B.owner !== P) return;
+  if (P.dunk > 0 || P.layup > 0 || P.ankle > 0) return;
+
+  // Gatilho durante o arremesso: Tap = Pump Fake | Hold = Bail Out Pass
+  if (isInShotCancelWindow(P)) {
+    if (!to || to.dunk > 0 || to.layup > 0) {
+      triggerPumpFake(P);
+      return;
+    }
+    if (!P.passHoldT || P.passHoldT <= 0) P.passHoldT = 0.001;
+    return;
+  }
+
+  if (!to || P.lock > 0 || P.passPend) return;
+  if (to.dunk > 0 || to.layup > 0) return;
+  // janela de recepção aérea aberta pelo parceiro (ou ainda dentro da tolerância): lança o alley-oop
+  if (oopWin && oopWin.recv === to && oopWin.t > -OOP_GRACE) { alleyOopPass(P, to); return; }
+  passBall(P, to);
+}
+
+/* ============================================================================
+   PASSE v3: Seleção Contextual de Passe (Peito, Picado, Por Cima / Lob, Por Trás das Costas e Bail Out),
+   transição suave entre o ciclo de drible e a soltura (windup + follow-through), direcionamento preditivo (lead pass),
+   física com quique no piso para Passe Picado e hitbox varrida com interceptação.
+   ============================================================================ */
+const PASS_K = -Math.log(0.92);   // arrasto horizontal da bola solta (mesmo 0.92^s da física da bola)
+const PASS_CHEST_Z = 50;          // altura de recepção do passe de peito (unidades; ~1,5 m)
+let passSeq = 0;
+
+// onde o corredor estará em t segundos: velocidade atual + parte da aceleração, sem sair da quadra
+function predictRunner(o, t) {
+  const ax = cl(o.ax || 0, -240, 240), ay = cl(o.ay || 0, -240, 240);
+  return { x: cl(o.x + o.vx * t + 0.3 * ax * t * t, 26, W - 26), y: cl(o.y + o.vy * t + 0.3 * ay * t * t, 26, H - 26) };
+}
+// ponto de interceptação do passe com o aliado em movimento (iteração: tempo de voo <-> posição futura)
+function solveLead(fx, fy, to, spd) {
+  let t = Math.hypot(to.x - fx, to.y - fy) / spd, p = { x: to.x, y: to.y };
+  for (let i = 0; i < 5; i++) {
+    p = predictRunner(to, t);
+    const lx = p.x - to.x, ly = p.y - to.y, ll = Math.hypot(lx, ly);
+    if (ll > 130) { p.x = to.x + lx / ll * 130; p.y = to.y + ly / ll * 130; }   // não "chuta" longe demais do aliado
+    t = cl(Math.hypot(p.x - fx, p.y - fy) / (spd * (1 - 0.04 * t)), 0.08, 1.25);
+  }
+  return { x: p.x, y: p.y, t };
+}
+// analisa a linha de passe em relação aos defensores: menor distância, posição longitudinal u (0..1) e o defensor mais próximo
+function laneInfo(x0, y0, x1, y1, passer) {
+  let best = 999, bestU = 0.5, bestDef = null;
+  const sx = x1 - x0, sy = y1 - y0, sl = sx * sx + sy * sy || 1;
+  for (const E of oppsOf(passer)) {
+    const u = cl(((E.x - x0) * sx + (E.y - y0) * sy) / sl, 0, 1);
+    const d = Math.hypot(E.x - (x0 + sx * u), E.y - (y0 + sy * u));
+    if (d < best) { best = d; bestU = u; bestDef = E; }
+  }
+  return { d: best, u: bestU, def: bestDef };
+}
+// o quão livre está a linha de passe (0 = defensor em cima da linha, 1 = totalmente livre)
+function laneOpenness(x0, y0, x1, y1, passer) {
+  return cl((laneInfo(x0, y0, x1, y1, passer).d - 16) / 42, 0, 1);
+}
+
+// Seleção Contextual de Passe baseada na distância do aliado, velocidade/drible do portador e posição do defensor:
+// - 'chest'   (Passe de Peito): trajetória reta e rápida para aliados livres em curta/média distância
+// - 'bounce'  (Passe Picado): quica no chão antes de chegar ao aliado quando há defensor fechando a linha alta / perto do garrafão
+// - 'lob'     (Passe por Cima / Overhead): arco mais alto para superar defensores na linha ou alcançar aliados distantes
+// - 'behind'  (Passe por Trás das Costas): em movimento (sprint/transição/drible) com aliado em ângulo lateral/diagonal
+// - 'bailout' (Bail Out / Jump Pass): passe de emergência em suspensão ao cancelar o arremesso
+function selectPassType(from, to, o = {}) {
+  if (o.kind) return o.kind;
+  if (o.oop) return 'lob';
+  const dx = to.x - from.x, dy = to.y - from.y, dist = Math.hypot(dx, dy) || 1;
+  const ux = dx / dist, uy = dy / dist;
+  const sp = Math.hypot(from.vx || 0, from.vy || 0);
+  const mvX = sp > 35 ? (from.vx / sp) : (from.fx || Math.sin(from.ry || 0));
+  const mvY = sp > 35 ? (from.vy / sp) : (from.fy || Math.cos(from.ry || 0));
+  const fwdDot = mvX * ux + mvY * uy;               // +1 = na frente, 0 = lateral 90°, <0 = atrás/diagonal traseira
+  const latCross = -mvX * uy + mvY * ux;
+  const li = laneInfo(from.x, from.y, to.x, to.y, from);
+  const nearPaint = isInsidePaint(to.x, to.y) || isInsidePaint(from.x, from.y) || Math.hypot(to.x - HX, to.y - HY) < 175;
+  const defBlockingHigh = li.def && (li.def.block > 0 || li.def.dd > 0 || bodyOf(li.def).h >= 1.03);
+
+  // 1) Passe por Trás das Costas (Behind-the-Back): portador em movimento (sprint ou transição/drible ativo)
+  //    e aliado posicionado em ângulo lateral/diagonal
+  if (!from.deadDrib && (sp > 92 || activeMove(from) || from.bb > 0) && dist >= 42 && dist <= 235) {
+    if (fwdDot >= -0.68 && fwdDot <= 0.64 && Math.abs(latCross) >= 0.48) {
+      return 'behind';
+    }
+  }
+
+  // 2) Passe Picado (Bounce Pass): defensor fechando a linha de passe superior próximo ao garrafão (ou modificador C pressionado perto)
+  if (dist >= 52 && dist <= 245) {
+    if ((li.d < 44 && li.u > 0.16 && li.u < 0.86 && (nearPaint || defBlockingHigh)) ||
+        (from === P && K.KeyC && nearPaint && li.d < 62)) {
+      return 'bounce';
+    }
+  }
+
+  // 3) Passe por Cima (Overhead / Lob Pass): aliado distante ou defensor intermediário mais baixo na linha de passe
+  if (dist > 195 || (dist > 120 && li.d < 48 && li.u > 0.18 && li.u < 0.82 && (!li.def || li.def.block <= 0))) {
+    return 'lob';
+  }
+
+  // 4) Passe de Peito (Chest Pass): padrão rápido e reto para curta/média distância
+  return 'chest';
+}
+
+const PASS_LABEL = {
+  chest: 'PASSE DE PEITO',
+  bounce: 'PASSE PICADO!',
+  lob: 'PASSE POR CIMA (LOB)',
+  behind: 'PASSE POR TRÁS DAS COSTAS!',
+  bailout: 'BAIL OUT PASS!'
+};
+
+// Inicia a animação contextual de passe e agenda (ou executa imediatamente) a soltura física da bola
+function passBall(from, to, o = {}) {
+  if (!from || !to) return null;
+  const kind = selectPassType(from, to, o);
   const dx = to.x - from.x, dy = to.y - from.y, dl = Math.hypot(dx, dy) || 1;
-  const sp = cl(240 + dl * 1.2, 280, 500);
-  const lead = (dl / sp) * 0.6;
-  const tx = to.x + to.vx * lead, ty = to.y + to.vy * lead;
+  const sinY = Math.sin(from.ry || 0), cosY = Math.cos(from.ry || 0);
+  const latSide = (-dx * cosY + dy * sinY) >= 0 ? 1 : -1;
+
+  from.passKind = kind;
+  from.passDir = kind === 'behind' ? (from.hand || latSide) : latSide;
+  from.passDur = kind === 'bailout' ? 0.44 : (kind === 'behind' ? 0.38 : (kind === 'lob' ? 0.38 : 0.34));
+  from.passAnim = from.passDur;
+  from.deadDrib = false;
+  from.dribbled = false;
+  from.pump = 0;
+  from.passHoldT = 0;
+  from.plan = null;
+  // Suaviza a transição interrompendo dribles ativos para alinhar o tronco e braços ao passe
+  from.cx = from.sd = from.bb = from.sb = 0; from.mvKind = null; from.nextMove = null;
+
+  if (kind !== 'behind') face(from, to.x, to.y);
+
+  // Para passes normais no solo, aplica um micro-gather de 0.055s que transiciona a bola suavemente do drible para as mãos antes do release
+  if (!o.immediate && !o.oop && kind !== 'bailout' && B.s === 'held' && B.owner === from) {
+    from.passPend = { to, o: Object.assign({}, o, { kind, immediate: true }), t: 0.055 };
+    return null;
+  }
+  from.passPend = null;
+  return launchPassBall(from, to, Object.assign({}, o, { kind }));
+}
+
+// o = { kind, err: erro lateral máximo, speed: mult. de velocidade, noLead, zc: altura de chegada, oop }
+function launchPassBall(from, to, o = {}) {
+  const kind = o.kind || selectPassType(from, to, o);
+  const dl0 = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+  const kindSpdMult = kind === 'chest' ? 1.06 : (kind === 'behind' ? 1.08 : (kind === 'bounce' ? 0.94 : (kind === 'lob' ? 0.84 : 1.04)));
+  const spd = cl(330 + dl0 * 0.95, 340, 580) * kindSpdMult * (o.speed || 1);
+  const lead = o.noLead ? { x: to.x, y: to.y, t: dl0 / spd } : solveLead(from.x, from.y, to, spd);
+  let tx = lead.x, ty = lead.y;
+  if (o.err) {
+    const a = R() * Math.PI * 2, r = o.err * (0.6 + 0.4 * R());
+    tx = cl(tx + Math.cos(a) * r, 24, W - 24); ty = cl(ty + Math.sin(a) * r, 24, H - 24);
+  }
   const ddx = tx - from.x, ddy = ty - from.y, dd = Math.hypot(ddx, ddy) || 1;
-  B.s = 'loose';
-  B.owner = null;
-  B.x = from.x + (ddx / dd) * 12; B.y = from.y + (ddy / dd) * 12; B.z = 40;
-  B.vx = (ddx / dd) * sp; B.vy = (ddy / dd) * sp; B.vz = 40;
-  B.nopick = 0.14; B.passer = from; B.passT = 0.35;
+  const ux = ddx / dd, uy = ddy / dd;
+  const perpX = -uy * (from.passDir || 1), perpY = ux * (from.passDir || 1);
+
+  let T = cl(dd / (spd * (1 - 0.04 * lead.t)), 0.10, 1.45);
+  if (kind === 'lob' && !o.oop) T = cl(T * 1.18, 0.24, 1.45);
+
+  // Ponto de saída (release) ajustado conforme a variação do passe
+  const startOffFwd = kind === 'behind' ? 6 : 12;
+  const startOffLat = kind === 'behind' ? 11 : 0;
+  const sx = from.x + ux * startOffFwd + perpX * startOffLat;
+  const sy = from.y + uy * startOffFwd + perpY * startOffLat;
+  const sz = kind === 'lob' ? 66 : (kind === 'bailout' ? Math.max(64, B.z || 64) : (kind === 'bounce' ? 40 : (kind === 'behind' ? 42 : 48)));
+  const distEff = Math.max(10, Math.hypot(tx - sx, ty - sy));
+  const v0 = distEff * PASS_K / (1 - Math.exp(-PASS_K * T));                 // velocidade inicial que compensa o arrasto
+  const zc = o.zc == null ? (kind === 'lob' && !o.oop ? 58 : PASS_CHEST_Z) : o.zc;
+
+  B.s = 'loose'; B.owner = null;
+  B.x = sx; B.y = sy; B.z = sz;
+  B.vx = ux * v0; B.vy = uy * v0;
+
+  let bvx = 0, bvy = 0, bvz = 0;
+  if (kind === 'bounce') {
+    // Trajetória em 2 estágios: desce até quicar no piso em ~58% do tempo de voo e sobe limpa até as mãos do receptor
+    const t1 = Math.max(0.07, T * 0.58);
+    const t2 = Math.max(0.07, T - t1);
+    B.vz = (4 - sz + 0.5 * GRAVITY * t1 * t1) / t1;
+    const vAfterDrag = v0 * Math.exp(-PASS_K * t1);
+    bvx = ux * vAfterDrag;
+    bvy = uy * vAfterDrag;
+    bvz = (zc - 4 + 0.5 * GRAVITY * t2 * t2) / t2;
+  } else {
+    B.vz = (zc - sz + 0.5 * GRAVITY * T * T) / T;
+  }
+
+  B.nopick = 0.10; B.passer = from; B.passT = 0.28; B.claim = null; B.poke = null;
+  B.pass = {
+    id: ++passSeq, from, to, team: teamOf(from), tx, ty, T, t: 0,
+    kind, bounce: kind === 'bounce', bounced: false, bvx, bvy, bvz,
+    oop: !!o.oop, px: sx, py: sy, pz: sz, done: []
+  };
   from.cd = Math.max(from.cd, 0.25);
-  face(from, to.x, to.y);
+  from.plan = null;
+  if (kind !== 'behind') face(from, tx, ty);
   poss = teamOf(from);
+
+  // Feedback no HUD para passes especiais do jogador/dupla
+  if (!o.oop && kind !== 'bailout' && (from === P || (coopLive() && isHumanEnt(from))) && kind !== 'chest') {
+    say(PASS_LABEL[kind] || 'PASSE!', 0.85, 'normal');
+  }
+  if (typeof audio !== 'undefined' && audio.playBounce) audio.playBounce(kind === 'bounce' ? 0.65 : 0.45);
+  return B.pass;
+}
+
+// chance de um BOT interceptar: nível de dificuldade x quão central a bola passa x velocidade do passe x postura do defensor
+function interceptChance(E, d, hitR) {
+  let p = dif().intercept;
+  p *= 1 - 0.45 * (d / hitR);
+  p *= cl(1.15 - Math.hypot(B.vx, B.vy) / 900, 0.55, 1.05);
+  if (E.dd > 0 || E.cut > 0 || E.block > 0) p *= 1.3;
+  p *= 1 + 0.25 * attrK(E, 'def');
+  if (E.recover > 0 || E.shook > 0) p *= 0.4;
+  if (B.pass && B.pass.kind === 'behind') p *= 0.68;   // passe por trás das costas engana a marcação
+  return cl(p, 0, 0.92);
+}
+function catchPass(E) {
+  const high = B.z >= 55;
+  if (high) E.block = Math.max(E.block, 0.5); else { E.cut = Math.max(E.cut || 0, 0.4); E.cutSide = stealSideFor(E, B.x, B.y); }
+  B.s = 'held'; B.owner = E; B.vx = B.vy = B.vz = 0; B.pass = null; B.passer = null; B.passT = 0; B.nopick = 0; B.claim = null;
+  poss = teamOf(E); onPossessionPickup(E);
+  plan = null; E.plan = null; fl = null;
+  updateScorebug();
+  const mine = teamOf(E) === teamOf(P);
+  say(mine ? 'PASSE INTERCEPTADO!' : 'CPU INTERCEPTOU O PASSE!', 1.2, mine ? 'good' : 'bad');
+  if (typeof audio !== 'undefined') audio.playShoeSqueak(0.7);
+}
+function tipPass(E) {
+  const side = stealSideFor(E, B.x, B.y) > 0 ? -1 : 1;
+  const a = Math.atan2(B.vy, B.vx) + side * (0.5 + R() * 0.5), sp = Math.hypot(B.vx, B.vy) * 0.45;
+  B.vx = Math.cos(a) * sp; B.vy = Math.sin(a) * sp; B.vz = Math.max(B.vz, 18);
+  B.pass = null; B.passer = null; B.passT = 0; B.nopick = 0.12;
+  poss = null;                                   // bola viva: os dois times disputam
+  say('PASSE DESVIADO!', 0.9, teamOf(E) === teamOf(P) ? 'good' : 'bad');
+  if (typeof audio !== 'undefined') audio.playBackboardHit(0.4);
+}
+// por passo de física, com passe no ar: hitbox varrida da bola contra os defensores
+function passTick(dt) {
+  const ps = B.pass;
+  if (!ps) return;
+  ps.t += dt;
+  if (B.s !== 'loose' || B.owner) { B.pass = null; return; }
+  // No Passe Picado, o primeiro toque no chão é parte natural da trajetória (ps.bounce && !ps.bounced)
+  if ((B.z <= 5 && B.vz <= 0 && ps.t > 0.12 && !(ps.bounce && !ps.bounced)) || ps.t > ps.T + 0.6) { B.pass = null; return; }
+  const x0 = ps.px, y0 = ps.py, z0 = ps.pz, x1 = B.x, y1 = B.y, z1 = B.z;
+  ps.px = x1; ps.py = y1; ps.pz = z1;
+  const sx = x1 - x0, sy = y1 - y0, sl = sx * sx + sy * sy;
+  for (const E of ents()) {
+    if (teamOf(E) === ps.team || ps.done.includes(E) || E.ankle > 0 || E.blkPend) continue;   // blkPend: o toco automático do humano já cuida
+    const u = sl > 1e-6 ? cl(((E.x - x0) * sx + (E.y - y0) * sy) / sl, 0, 1) : 1;
+    const qx = x0 + sx * u, qy = y0 + sy * u, qz = z0 + (z1 - z0) * u;
+    const d = Math.hypot(E.x - qx, E.y - qy);
+    const arms = (E.block > 0 || E.cut > 0 || E.dd > 0 || E.steal > 0) ? 1 : 0;
+    const hitR = (19 + 8 * arms + 3 * attrK(E, 'def')) * bodyOf(E).w;      // corpo + braços
+    const minZ = E.block > 0 ? 28 : 2;                                     // defensor pulando passa por cima do passe picado rasteiro
+    const top = E.block > 0 ? 125 : (arms ? 96 : 82);                      // alcance vertical (lob passa por cima de quem não pulou)
+    if (d > hitR || qz < minZ || qz > top) continue;
+    ps.done.push(E);                                                      // uma chance por defensor por passe
+    if (isHumanEnt(E) || R() < interceptChance(E, d, hitR)) { catchPass(E); return; }
+    if (R() < 0.35) { tipPass(E); return; }                               // quase: desvia a bola
+    E.cut = Math.max(E.cut || 0, 0.35); E.cutSide = stealSideFor(E, B.x, B.y);
+  }
+}
+
+/* ============================================================================
+   PONTE AÉREA (ALLEY-OOP SINCRONIZADO):
+   1) Gatilho do Receptor (sem bola): correndo (sprint ativo) rumo ao garrafão + botão de arremesso/enterrada (ESPAÇO)
+      abre uma janela de recepção aérea (OOP_WIN).
+   2) Gatilho do Passador (com bola): pressiona passe (G) dentro da mesma janela.
+   3) Resolução: dentro da janela e na distância certa do aro -> parábola alta e enterrada no ar;
+      timing ou distância errados -> passe impreciso ou turnover.
+   ============================================================================ */
+const OOP_WIN = 1.15;          // duração da janela de recepção aérea (s)
+const OOP_GRACE = 0.40;        // tolerância após a janela fechar (passe atrasado -> passe impreciso / turnover)
+const OOP_DUNK_AT = 0.32;      // progresso da enterrada em que as mãos pegam a bola no ar
+const OOP_CATCH_Z = 93;        // altura da recepção aérea (~2,9 m, na altura do aro)
+const OOP_MIN_D = 32, OOP_MAX_D = 185;   // faixa de distância até o aro que permite finalizar a ponte aérea
+
+function canOpenOop(R) {
+  if (!TM || deadT > 0 || over || oopRun || oopCool > 0) return false;
+  const hd = partnerOf(R);
+  if (!hd || B.s !== 'held' || B.owner !== hd || mustClear(hd)) return false;
+  if (R.dunk > 0 || R.layup > 0 || R.block > 0 || R.lock > 0 || R.ankle > 0 || R.exhausted || R.stamina < 18) return false;
+  const d = Math.hypot(HX - R.x, HY - R.y);
+  if (d < 34 || d > 255) return false;
+  const sp = Math.hypot(R.vx, R.vy);
+  if (sp < 95) return false;
+  // precisa estar correndo em direção ao garrafão/aro
+  const dot = (R.vx * (HX - R.x) + R.vy * (HY - R.y)) / (sp * (d || 1));
+  return dot > 0.25;
+}
+function openAlleyOopWindow(R) {
+  if (!canOpenOop(R)) return false;
+  oopWin = { recv: R, t: OOP_WIN, shown: true };
+  oopCool = 0.35;
+  const mine = teamOf(R) === teamOf(P);
+  const byMe = (R === P && !NET.swapped) || (NET.swapped && R === P);
+  if (mine) say(byMe ? 'PEDIU PONTE AÉREA! [G]' : 'PARCEIRO PEDIU PONTE AÉREA! PRESSIONE [G]', 1.15, 'good');
+  if (typeof audio !== 'undefined' && audio.playShoeSqueak) audio.playShoeSqueak(0.6);
+  return true;
+}
+// passador acionou o passe com uma janela de recepção aberta (ou recém-expirada)
+function alleyOopPass(from, to) {
+  const w = oopWin;
+  oopWin = null; oopCool = 1.1;
+  const rem = w ? w.t : -1;
+  const dRim = Math.hypot(HX - to.x, HY - to.y);
+  const finScale = 1 + 0.12 * attrK(to, 'fin');
+  const distFar = dRim > OOP_MAX_D * finScale, distClose = dRim < OOP_MIN_D;
+  const late = rem <= 0;                                                   // acionou o passe depois que a janela fechou
+  // se o parceiro for um BOT que abriu a janela, a dificuldade pode fazer o passe sair atrasado
+  const botFail = !isHumanEnt(from) && R() > dif().oopAcc;
+
+  if (late || distFar || distClose || botFail) {
+    // FALHA DE TIMING OU DISTÂNCIA: passe impreciso ou turnover direto para a defesa
+    const reason = late ? 'TIMING ATRASADO' : (distFar ? 'LONGE DEMAIS DO ARO' : (distClose ? 'EMBAIXO DO ARO' : 'PASSE FORÇADO'));
+    const defs = oppsOf(from);
+    const nearDef = defs.reduce((a, b) => D(to, a) < D(to, b) ? a : b, defs[0]);
+    const turnover = (late && rem < -0.18) || (nearDef && D(to, nearDef) < 62 && R() < 0.65) || R() < 0.42;
+    if (turnover && nearDef) {
+      // lançada alta fora de tempo na direção da defesa -> turnover
+      const p = passBall(from, nearDef, { kind: 'lob', immediate: true, err: 18, speed: 0.92, noLead: true, zc: 62 });
+      B.claim = nearDef; B.claimT = (p ? p.T : 0.45) + 0.35;
+      say('PONTE AÉREA FALHOU (' + reason + ') — TURNOVER!', 1.35, teamOf(from) === teamOf(P) ? 'bad' : 'good');
+    } else {
+      // passe impreciso: bola escapa alta/forte demais e o receptor perde o controle na recepção
+      const a = Math.atan2(HY - to.y, HX - to.x) + (R() < 0.5 ? 1 : -1) * (0.65 + R() * 0.5);
+      const bad = { x: cl(HX + Math.cos(a) * (75 + R() * 65), 32, W - 32), y: cl(HY + 45 + Math.abs(Math.sin(a)) * (70 + R() * 65), 32, H - 32), vx: 0, vy: 0 };
+      passBall(from, bad, { kind: 'lob', immediate: true, noLead: true, speed: 1.08, zc: 68 });
+      to.oopFlub = 0.55;                                                   // se tocar na bola, ela escapa das mãos
+      say('PONTE AÉREA FORA DE TEMPO (' + reason + ') — PASSE IMPRECISO!', 1.3, teamOf(from) === teamOf(P) ? 'bad' : 'good');
+    }
+    return;
+  }
+
+  // SUCESSO: calcula a parábola alta até a borda do aro e sincroniza o salto da enterrada
+  const aRim = Math.atan2(to.y - HY, to.x - HX);
+  const cx = HX + Math.cos(aRim) * 14, cy = HY + Math.sin(aRim) * 14 + 4; // ponto de encontro das mãos com a bola perto do aro
+  const T = cl(0.46 + dRim / 380, 0.50, 0.78);                             // tempo total do passe alto no ar
+  const jumpAt = Math.max(0.02, T - OOP_DUNK_AT * 0.96);                   // instante em que o receptor salta para pegar no ar
+  const toRim = Math.hypot(cx - to.x, cy - to.y);
+  const runSp = cl(toRim / Math.max(0.14, jumpAt + 0.12), 165, 235);
+  const ux = (cx - from.x), uy = (cy - from.y), ul = Math.hypot(ux, uy) || 1;
+  const sx = from.x + (ux / ul) * 12, sy = from.y + (uy / ul) * 12, sz = 46;
+  const dist = Math.hypot(cx - sx, cy - sy);
+  const v0 = dist * PASS_K / (1 - Math.exp(-PASS_K * T));                  // compensa o arrasto do ar para chegar exatamente em (cx,cy)
+
+  B.s = 'loose'; B.owner = null;
+  B.x = sx; B.y = sy; B.z = sz;
+  B.vx = (ux / ul) * v0; B.vy = (uy / ul) * v0;
+  B.vz = (OOP_CATCH_Z - sz + 0.5 * GRAVITY * T * T) / T;                   // parábola alta: sobe acima do aro e desce no ponto de pegada
+  B.nopick = Math.max(0.14, T - 0.16);                                     // ninguém pega no chão antes de subir; interceptação aérea segue ativa
+  B.passer = from; B.passT = T; B.claim = null; B.poke = null;
+  B.pass = { id: ++passSeq, from, to, team: teamOf(from), tx: cx, ty: cy, T, t: 0, oop: true, px: sx, py: sy, pz: sz, done: [] };
+
+  from.cd = Math.max(from.cd, 0.35); from.plan = null;
+  from.passKind = 'lob'; from.passDur = 0.38; from.passAnim = 0.38; from.deadDrib = false; from.dribbled = false;
+  face(from, cx, cy);
+  to.plan = null; to.oop = true; to.cutGo = false;
+  drainStamina(to, 18, 0.9);
+  poss = teamOf(from);
+  oopRun = { from, to, team: teamOf(from), t: 0, T, jumpAt, jumped: false, caught: false, cx, cy, runSp, passId: B.pass.id };
+  const mine = teamOf(from) === teamOf(P);
+  say(mine ? 'PONTE AÉREA NO AR!' : 'CPU: PONTE AÉREA!', 1.1, mine ? 'good' : 'bad');
+  if (typeof audio !== 'undefined' && audio.playBounce) audio.playBounce(0.55);
+}
+
+// por passo de física: janela aberta, corrida/salto do receptor e conexão da bola nas mãos no ar
+function alleyOopStep(dt) {
+  if (oopCool > 0) oopCool = Math.max(0, oopCool - dt);
+  if (oopWin) {
+    const r = oopWin.recv, hd = partnerOf(r);
+    oopWin.t -= dt;
+    // cancela se a posse mudou ou se o receptor entrou em outra ação
+    if (!hd || B.s !== 'held' || B.owner !== hd || deadT > 0 || over || r.dunk > 0 || r.layup > 0 || r.ankle > 0) {
+      oopWin = null;
+    } else if (oopWin.t <= 0 && oopWin.shown) {
+      oopWin.shown = false;                                                // janela fechou: resta apenas a tolerância (que dá passe errático)
+    } else if (oopWin.t <= -OOP_GRACE) {
+      oopWin = null;
+    } else if (!isHumanEnt(hd) && oopWin.t > 0 && oopWin.t < OOP_WIN - dif().oopReact && hd.cd <= 0 && !mustClear(hd)) {
+      // PARCEIRO BOT COM A BOLA: vê o humano pedindo a ponte aérea e lança depois do tempo de reação da dificuldade
+      alleyOopPass(hd, r);
+    }
+  }
+  const o = oopRun;
+  if (!o) return;
+  o.t += dt;
+  const R = o.to;
+  // se a bola foi interceptada/desviada por um defensor ou a jogada parou, encerra a ponte aérea
+  if (deadT > 0 || over || R.ankle > 0 || (B.s === 'held' && B.owner !== R) || (!o.caught && (!B.pass || B.pass.id !== o.passId))) {
+    R.oop = false; oopRun = null; return;
+  }
+  if (!o.jumped) {
+    // guia o receptor em sprint até o ponto de decolagem perto do aro
+    const dx = o.cx - R.x, dy = o.cy - R.y, dl = Math.hypot(dx, dy) || 1;
+    locomoteEntity(R, dx / dl, dy / dl, o.runSp, dt, 18);
+    face(R, HX, HY);
+    if (o.t >= o.jumpAt) {
+      o.jumped = true;
+      R.dunk = 0.96;
+      // tipos 0, 1, 2 e 3 sobem com as mãos prontas (dunk_cup) e cravam em seguida
+      const pool = [1, 2, 0, 3];
+      R.dunkType = pool[(Math.random() * pool.length) | 0];
+      R.dunkScored = false;
+      R.lock = 0.96;
+    }
+  }
+  if (o.jumped && !o.caught && o.t >= o.T - 0.04) {
+    if (B.s === 'loose' && Math.hypot(R.x - B.x, R.y - B.y) < 64 && B.z > 42) {
+      // CONECTOU NO AR: a bola passa para as mãos do receptor já em voo de enterrada
+      o.caught = true;
+      B.s = 'held'; B.owner = R; B.pass = null; B.passer = null; B.passT = 0; B.nopick = 0;
+      poss = null; charge = null; fl = null;
+      updateScorebug();
+      const mine = o.team === teamOf(P);
+      say(mine ? 'ALLEY-OOP SLAM DUNK!' : 'CPU: ALLEY-OOP SLAM!', 1.25, mine ? 'good' : 'bad');
+      if (typeof audio !== 'undefined' && audio.playShoeSqueak) audio.playShoeSqueak(0.8);
+    } else if (o.t > o.T + 0.14) {
+      R.oop = false; oopRun = null;
+    }
+  }
+  if (o.caught && R.dunk <= 0) { R.oop = false; oopRun = null; }
 }
 
 // Roubo rápido: braço estende em ~0.07s, TOCA na bola (contato) e só então o resultado é aplicado
@@ -6371,7 +7067,7 @@ function stealSituation(H, S) {
   let m = 1;
   if (H.dr) m *= 1.5;                                         // postura de drible (C): bola mais exposta, 50% mais fácil de roubar
   m *= (1 - 0.25 * attrK(H, 'dri')) * (1 + 0.3 * attrK(S, 'def'));   // classe: bom driblador protege, bom defensor rouba mais
-  const gathering = (H === P && !!charge) || (fl && fl.phase === 'windup' && fl.shooter === H);
+  const gathering = (H === P && !!charge) || (NET.live && H === remoteEnt() && !!NET.rcharge) || (fl && fl.phase === 'windup' && fl.shooter === H);
   if (gathering) m *= 1.55;                                   // bola armada para o arremesso: dá para raspar/tapar por baixo
   if (H.stopT > 0 || H.pivotT > 0) m *= 1.35;                 // drible morto / freada / pivô: bola presa e lenta
   if (H.landing > 0) m *= 1.45;                               // acabou de aterrissar, desequilibrado
@@ -6417,7 +7113,7 @@ function resolveStealContact(o) {
     o.stealCD = 0; o.recover = 0;
     poss = teamOf(o); plan = null; T.plan = null; o.plan = null;
     if (T === P) charge = null;
-    if (NET.live && T === A) NET.rcharge = null;
+    if (NET.live && T === remoteEnt()) NET.rcharge = null;
     T.vx -= ux * 34; T.vy -= uy * 34; T.cd = Math.max(T.cd, 0.3);
     updateScorebug();
     if (o === P) say('ROUBADA DE BOLA!', 1.2, 'good');
@@ -6550,21 +7246,24 @@ function gameKeyDown(code) {
 
   if (P && P.ankle > 0) return;   // caído no ankle breaker: nenhuma ação até levantar
 
-  if ((code === 'ShiftLeft' || code === 'ShiftRight') && P && !P.exhausted && P.stamina > 18 && P.burstT <= 0) {
+  if ((code === 'ShiftLeft' || code === 'ShiftRight') && P && !P.exhausted && !P.deadDrib && P.stamina > 18 && P.burstT <= 0) {
     P.burstT = 0.26;
     drainStamina(P, 9, 0.5);
   }
 
   // ESPAÇO: Com a bola faz Jump Shot / Bandeja / Dunk; Sem a bola faz o boneco PULAR (Contest / Toco / Rebote)
   if (code === 'Space' && !deadT && !over) {
-    if (B.s === 'held' && B.owner === P && !charge && !fl && P.dunk <= 0 && P.layup <= 0) {
-      if ((K.ShiftLeft || K.ShiftRight) && !P.exhausted && P.stamina >= 22 && D(P, { x: HX, y: HY }) <= 112 && D(P, { x: HX, y: HY }) >= 18) {
+    if (B.s === 'held' && B.owner === P && !charge && !fl && P.dunk <= 0 && P.layup <= 0 && P.pump <= 0.14) {
+      if (!P.deadDrib && (K.ShiftLeft || K.ShiftRight) && !P.exhausted && P.stamina >= 22 && D(P, { x: HX, y: HY }) <= 112 && D(P, { x: HX, y: HY }) >= 18) {
         tryStartDunkOrLayup(P);
       } else {
+        P.pump = 0;
         charge = { t: 0 };
         P.shotBase = shotBaseNow(P);   // a base do arremesso vale o momento em que começou a carregar
       }
     } else if (!(B.s === 'held' && B.owner === P)) {
+      // Sem a bola + sprint em direção ao garrafão (com o aliado com a bola): abre a janela de recepção da Ponte Aérea
+      if ((K.ShiftLeft || K.ShiftRight) && openAlleyOopWindow(P)) return;
       tryJumpOrBlockSpace();
     }
   }
@@ -6575,7 +7274,7 @@ function gameKeyDown(code) {
   if (code === 'KeyB' && !NET.swapped) toggleRigBones();
   if (code === 'KeyQ') triggerDribbleMove('c');
   if (code === 'KeyF') triggerDribbleMove('s');
-  if (stance() && DIR_TOKEN[code]) sMove(code);   // segurando C: cada direção entra no buffer de combos
+  if (!P.deadDrib && stance() && DIR_TOKEN[code]) sMove(code);   // segurando C: cada direção entra no buffer de combos
 }
 
 addEventListener('keyup', e => {
@@ -6587,7 +7286,15 @@ addEventListener('keyup', e => {
 
 function gameKeyUp(code) {
   if (code === 'KeyC') { if (NET.swapped) pendR = 0; else pend = 0; }
+  // Condição A — Toque Rápido no Passe durante o arremesso (Tap < 0.16s = Pump Fake)
+  if (code === 'KeyG' && P && P.passHoldT > 0) {
+    P.passHoldT = 0;
+    triggerPumpFake(P);
+    return;
+  }
   if (code === 'Space' && charge) {
+    // Se o botão de passe está sendo segurado para cancelar o chute (Pump Fake / Bail Out), aguarda a resolução do passe
+    if (P && P.passHoldT > 0) return;
     const t = charge.t;
     charge = null;
     shoot(P, t);
@@ -6895,7 +7602,7 @@ function startDribbleMove(o, kind, dir, grade) {
     for (const E of oppsOf(o)) {
       const d = D(o, E);
       if (d > 95) continue;
-      const human = E === P || (NET.live && E === A);       // em jogador humano o efeito é mais leve
+      const human = isHumanEnt(E);       // em jogador humano o efeito é mais leve
       // hesitação pega quem vem fechando: o marcador "compra" a parada e passa do ponto
       const dl = d || 1, closing = (E.vx * (o.x - E.x) + E.vy * (o.y - E.y)) / dl;
       const fk = (MOVE_SHAKE[kind] ?? 1) * (kind === 'hesi' && closing > 40 ? 1.6 : 1);
@@ -6946,13 +7653,17 @@ function sResolve() {
   if (NET.swapped) pendR = 0; else pend = 0;
   const buf = P.dirBuf; P.dirBuf = null;
   if (!buf || !buf.list.length) return;
-  if (!stance() || charge || deadT > 0 || over || P.lock > 0) return;
+  if (!stance() || P.deadDrib || charge || deadT > 0 || over || P.lock > 0) return;
   const m = matchDribbleCombo(buf.list);
   queueDribbleMove(P, m.kind, m.dir, buf.err);
 }
 
 function triggerDribbleMove(k) {
   if (B.owner !== P || B.s !== 'held' || charge || deadT > 0 || over || P.lock > 0) return;
+  if (P.deadDrib) {
+    say('DRIBLE ENCERRADO (PIVÔ): PASSE [G] OU CHUTE [ESPAÇO]', 0.9, 'bad');
+    return;
+  }
   const isStepBackCross = k === 'c' && (K.KeyS || K.ArrowDown) && !(K.KeyW || K.ArrowUp);
   if (isStepBackCross) queueDribbleMove(P, 'sb', 0);
   else if (k === 'c') {
@@ -7448,7 +8159,7 @@ function varOf(o, key, tm, dur, n) {
 // ===== DEFESA COM C: bloqueio automático só quando a bola vem na direção do jogador =====
 function deflectBall(d, kind) {
   const a = Math.atan2(B.y - d.y, B.x - d.x);
-  fl = null; B.s = 'loose'; B.owner = null; B.passer = null; B.passT = 0; B.nopick = 0.30;
+  fl = null; B.s = 'loose'; B.owner = null; B.passer = null; B.passT = 0; B.nopick = 0.30; B.pass = null;
   if (kind === 'block') {            // TOCO: bola alta é cravada para baixo/longe
     B.vx = Math.cos(a) * 145 + d.vx * 0.4; B.vy = Math.sin(a) * 145 + d.vy * 0.4;
     B.vz = 95; B.z = Math.max(72, B.z);
@@ -7493,12 +8204,36 @@ function autoBlockStep(dt) {
 }
 
 function humanControlStep(dt) {
-  P.dr = stance() ? 1 : 0;
-  P.dd = (K.KeyC && !(B.s === 'held' && B.owner === P) && deadT <= 0 && !over) ? 1 : 0;
+  const holdingNow = B.s === 'held' && B.owner === P;
+  if (!holdingNow && (P.deadDrib || P.dribbled)) { P.deadDrib = false; P.dribbled = false; }
+  P.dr = (!P.deadDrib && stance()) ? 1 : 0;
+  P.dd = (K.KeyC && !holdingNow && deadT <= 0 && !over) ? 1 : 0;
   autoBlockStep(dt);
 
+  // Resolução do gatilho de cancelamento de arremesso com o botão de passe:
+  // Toque rápido (< 0.16s) = Pump Fake | Segurar (>= 0.16s) = Bail Out Pass
+  if (P.passHoldT > 0) {
+    if (!holdingNow || !isInShotCancelWindow(P)) {
+      P.passHoldT = 0;
+    } else if (!K.KeyG) {
+      P.passHoldT = 0;
+      triggerPumpFake(P);
+    } else {
+      P.passHoldT += dt;
+      if (P.passHoldT >= BAILOUT_HOLD_T) {
+        P.passHoldT = 0;
+        const to = partnerOf(P);
+        if (to && to.dunk <= 0 && to.layup <= 0) triggerBailOutPass(P, to);
+        else triggerPumpFake(P);
+      }
+    }
+  }
+
   const isDribblingMove = P.cx > 0 || P.spin > 0 || P.sb > 0 || P.sd > 0 || P.bb > 0;
-  const sprintingNow = (K.ShiftLeft || K.ShiftRight) && P.mv && !P.exhausted && deadT <= 0;
+  if (holdingNow && !P.deadDrib && !charge && P.pump <= 0 && (P.v > 28 || P.dr || isDribblingMove)) {
+    P.dribbled = true;
+  }
+  const sprintingNow = (K.ShiftLeft || K.ShiftRight) && P.mv && !P.deadDrib && !P.exhausted && deadT <= 0;
 
   if (sprintingNow) {
     drainStamina(P, 24 * dt, 0.45);
@@ -7528,13 +8263,14 @@ function humanControlStep(dt) {
   const inDirX = fw * cd.x - rt * cd.y;
   const inDirY = fw * cd.y + rt * cd.x;
 
-  if (deadT <= 0 && P.dunk <= 0 && P.layup <= 0) {
-    const canSprint = (K.ShiftLeft || K.ShiftRight) && !P.exhausted && P.stamina > 0;
+  if (deadT <= 0 && P.dunk <= 0 && P.layup <= 0 && !P.oop) {
+    const canSprint = (K.ShiftLeft || K.ShiftRight) && !P.deadDrib && !P.exhausted && P.stamina > 0;
     let sp = canSprint ? 230 : 150;
-    if (poss === 'p' && sp > 205) sp = 206;
+    if (poss === teamOf(P) && sp > 205) sp = 206;
     if (P.dr) sp = Math.min(sp, 118);
     if (P.landing > 0) sp *= 0.65;
     if (charge) sp *= 0.35;
+    if (P.pump > 0) sp *= 0.18;
     if (P.lock > 0) sp *= 0.25;
     if (P.celeb > 0) sp *= 0.35;
 
@@ -7543,6 +8279,24 @@ function humanControlStep(dt) {
 
     if (ankleSlide(P, dt)) {
       // ankle breaker: caído, sem controle até levantar
+    } else if (holdingNow && P.deadDrib) {
+      // REGRA DO BASQUETE REAL (Bola Morta / Pé de Pivô):
+      // Drible encerrado após Pump Fake -> movimentação livre bloqueada; o jogador gira apenas no próprio eixo sobre o pé de pivô
+      P.vx = 0; P.vy = 0; P.ax = 0; P.ay = 0; P.mv = 0; P.sp = 0;
+      const inLen = Math.hypot(inDirX, inDirY);
+      if (inLen > 0.1) {
+        const ux = inDirX / inLen, uy = inDirY / inLen;
+        P.x = damp(P.x, cl(P.pivX + ux * 5.5, 22, W - 22), 14, dt);
+        P.y = damp(P.y, cl(P.pivY + uy * 5.5, 22, H - 22), 14, dt);
+        P.fx = ux; P.fy = uy;
+        if (P.pivotT <= 0.04) {
+          P.pivotT = 0.22;
+          if (typeof audio !== 'undefined' && audio.playShoeSqueak) audio.playShoeSqueak(0.28);
+        }
+      } else {
+        P.x = damp(P.x, cl(P.pivX, 22, W - 22), 12, dt);
+        P.y = damp(P.y, cl(P.pivY, 22, H - 22), 12, dt);
+      }
     } else if (activeMove(P)) {
       moveLocomotion(P, dt, cd.x, cd.y, inDirX, inDirY);                    // curvas do drible (anime.js)
     } else if (P.steal > 0 && P.stealGoT > 0) {
@@ -7559,7 +8313,7 @@ function humanControlStep(dt) {
     }
   }
 
-  if (charge) {
+  if (charge && !(P.passHoldT > 0)) {
     charge.t = Math.min(charge.t + dt * meterRate(P) / (0.55 * GAME_SPEED), 1.15); // medidor em tempo real; de três enche mais rápido
     if (charge.t >= 1.15) {
       const t = charge.t;
@@ -7568,60 +8322,35 @@ function humanControlStep(dt) {
     }
   }
 
-  if (P.dunk > 0) {
-    const progress = 1 - P.dunk / 0.96;
-    const dx = HX - P.x, dy = HY - P.y + 8, dl = Math.hypot(dx, dy) || 1;
-    if (progress < 0.62 && dl > 8) {
-      const glideSp = Math.max(145, dl / Math.max(0.18, 0.60 - progress)) * (1 - progress * 0.25);
-      P.vx = (dx / dl) * Math.min(240, glideSp);
-      P.vy = (dy / dl) * Math.min(240, glideSp);
-      P.x = cl(P.x + P.vx * dt, 22, W - 22);
-      P.y = cl(P.y + P.vy * dt, 22, H - 22);
-    } else {
-      P.vx *= 0.85; P.vy *= 0.85;
-    }
-    face(P, HX, HY);
-
-    if (progress >= 0.58 && !P.dunkScored && Math.hypot(P.x - HX, P.y - HY) < 36) {
-      P.dunkScored = true;
-      rimShake = 0.55;
-      B.s = 'flight';
-      B.owner = null;
-      B.x = HX; B.y = HY; B.z = (RIM_Y - 0.12) / s;
-      B.vx = 0; B.vy = 10; B.vz = -165;
-      B.isGreen = true;
-      fl = {
-        who: 'p',
-        shooter: P,
-        make: true,
-        three: false,
-        isGreen: true,
-        isDunk: true,
-        inPaint: true,
-        enteredRim: true,
-        scored: false,
-        rimHits: 0,
-        elapsed: 0,
-        T: 0.25
-      };
-    }
-  }
-
   return false;
 }
 
 /* ============================================================================
-   IA GENERICA (CPU adversaria e companheiros no 2v2)
+   IA ESCALÁVEL (1v1 e 2v2):
+   - Tempo de reação defensiva (leitura com atraso df.react, velocidade de slide, contestação, roubo e toco)
+   - Precisão ofensiva (janela/acerto de chute, ruído de timing, uso de sprint e infiltração no garrafão)
+   - Inteligência tática 2v2 (troca rápida de passes, leitura de linha de passe, cobertura no garrafão,
+     fechamento de linha de passe e Ponte Aérea sincronizada)
    ============================================================================ */
 function cpuAgent(E, dt) {
   if (ankleSlide(E, dt)) return;   // caída no ankle breaker: fora da jogada até levantar
+  if (E.oop) return;               // em rota guiada de ponte aérea
+  const df = dif();
   const myTeam = teamOf(E);
   const M = markOf(E);
   const holdingTeam = (poss && B.s === 'held') ? poss : null;
   const rimPt = { x: HX, y: HY };
 
+  // fôlego dos bots: gasta em sprint e recupera conforme a dificuldade
+  if (E.v > 175 && deadT <= 0) drainStamina(E, 14 * dt, 0.35);
+  else if (E.staminaRegenDelay <= 0 && E.steal <= 0 && E.block <= 0 && E.dunk <= 0) {
+    E.stamina = Math.min(100, E.stamina + df.stamina * (1 + 0.2 * attrK(E, 'sta')) * dt);
+    if (E.exhausted && E.stamina >= 26) E.exhausted = false;
+  }
+
   // 1) ATAQUE COM A BOLA
   if (holdingTeam === myTeam && B.owner === E) {
+    E.holdT = (E.holdT || 0) + dt;
     // LIMPAR A BOLA: depois de recuperar a posse, leva para trás da linha de 3 antes de atacar
     if (mustClear(E)) {
       if (!E.plan || E.plan.mode !== 'clear') {
@@ -7630,41 +8359,73 @@ function cpuAgent(E, dt) {
         else { const a = Math.atan2(E.y - HY, E.x - HX); tx = HX + Math.cos(a) * (ARC + 40); ty = HY + Math.sin(a) * (ARC + 40); }
         E.plan = { tx: cl(tx, 30, W - 30), ty: cl(ty, 30, H - 30), c: null, mode: 'clear' };
       }
-      locomoteEntity(E, E.plan.tx - E.x, E.plan.ty - E.y, 150, dt);
+      locomoteEntity(E, E.plan.tx - E.x, E.plan.ty - E.y, 155 * df.sprint, dt);
       return;
     }
     if (E.plan && E.plan.mode === 'clear') E.plan = null;   // limpou: escolhe a jogada normal
     if (!E.plan) {
       const roll = R();
-      // plano de ataque pela classe: [até aqui = perímetro (3), até aqui = meia distância, resto = infiltração]
-      const bias = { arremessador: [0.7, 0.9], driblador: [0.42, 0.76], pivo: [0.12, 0.55], enterrador: [0.18, 0.42] }[E.cls] || [0.42, 0.76];
-      if (roll < bias[0]) {
+      // plano de ataque pela classe + dificuldade (df.drive < 0 puxa os limiares para baixo => mais infiltração no garrafão)
+      const base = { arremessador: [0.7, 0.9], driblador: [0.42, 0.76], pivo: [0.12, 0.55], enterrador: [0.18, 0.42] }[E.cls] || [0.42, 0.76];
+      const b0 = cl(base[0] + df.drive, 0.06, 0.85), b1 = cl(base[1] + df.drive * 1.15, b0 + 0.08, 0.94);
+      if (roll < b0) {
         const a = Math.PI * (0.2 + R() * 0.6);
         E.plan = { tx: HX + Math.cos(a) * (ARC + 24), ty: HY + Math.sin(a) * (ARC + 24), c: null, mode: 'perim' };
-      } else if (roll < bias[1]) {
+      } else if (roll < b1) {
         E.plan = { tx: HX + (R() - 0.5) * 135, ty: HY + 105 + R() * 45, c: null, mode: 'mid' };
       } else {
-        E.plan = { tx: HX + (R() - 0.5) * 45, ty: HY + 55, c: null, mode: 'drive' };
+        E.plan = { tx: HX + (R() - 0.5) * 42, ty: HY + 48, c: null, mode: 'drive' };
       }
     }
     const pl = E.plan;
     if (pl.c === null) {
       const pm = partnerOf(E);
-      if (pm && D(E, M) < 56 && D(E, pm) > 70 && E.cd <= 0 && R() < 0.002) {
-        E.plan = null;
-        passBall(E, pm);
-        return;
+      if (pm && E.cd <= 0 && !mustClear(E)) {
+        // PONTE AÉREA DA IA: se o parceiro abriu a janela de recepção aérea e a linha está limpa, lança no alto
+        if (oopWin && oopWin.recv === pm && oopWin.t > 0 && oopWin.t < OOP_WIN - df.oopReact && laneOpenness(E.x, E.y, HX, HY, E) > 0.25) {
+          E.plan = null; alleyOopPass(E, pm); return;
+        }
+        // TROCA DE PASSES (2v2): no Fácil só passa sufocado; no Médio/Pro gira a bola rápido para o companheiro livre ou cortando
+        const pmDef = markOf(pm);
+        const myDefD = D(E, oppFor(E)), pmDefD = pmDef ? D(pm, pmDef) : 999;
+        const lane = laneOpenness(E.x, E.y, pm.x, pm.y, E);
+        const pmOpen = pmDefD > 68 && (pmDefD > myDefD + 16 || D(pm, rimPt) + 25 < D(E, rimPt));
+        const pmCut = pm.cutGo && D(pm, rimPt) < 165 && pmDefD > 42;
+        const pressed = myDefD < 54 && D(E, pm) > 65;
+        let pChance = 0;
+        if (df.passIQ >= 2) {
+          if (pmCut && lane > 0.35) pChance = 3.2 * dt;
+          else if (pmOpen && lane > 0.45 && E.holdT > 0.28) pChance = 1.9 * dt;
+          else if (pressed && lane > 0.30) pChance = 1.4 * dt;
+        } else if (df.passIQ === 1) {
+          if (pmCut && lane > 0.35) pChance = 1.2 * dt;
+          else if (pressed && lane > 0.25) pChance = 0.35 * dt;
+          else if (pmOpen && lane > 0.5 && E.holdT > 0.7) pChance = 0.45 * dt;
+        } else if (pressed) {
+          pChance = 0.14 * dt;                         // Fácil: demora para soltar a bola e às vezes força com marcador na frente
+        }
+        if (pChance > 0 && R() < pChance * df.passRate) {
+          E.plan = null; E.holdT = 0;
+          passBall(E, pm, { speed: df.passIQ >= 2 ? 1.12 : 1.0 });
+          return;
+        }
       }
-      cpuDribble(E, M, pl);
+      // frequência de dribles da CPU escala com a dificuldade
+      if (R() < df.sprint) cpuDribble(E, M, pl);
       if (activeMove(E)) {
         const tx = pl.tx - E.x, ty = pl.ty - E.y, tl = Math.hypot(tx, ty) || 1;
         moveLocomotion(E, dt, tx / tl, ty / tl, 0, 0);
       } else {
-        const driveSpeed = pl.mode === 'drive' ? 158 : 134;
+        // uso de sprint no ataque: na infiltração e em dificuldades altas acelera mais forte rumo ao aro
+        const baseSp = pl.mode === 'drive' ? 166 : 136;
+        const driveSpeed = baseSp * df.sprint;
+        if (pl.mode === 'drive' && df.sprint > 1.05 && !E.exhausted && E.stamina > 30 && E.burstT <= 0 && D(E, rimPt) < 190 && R() < dt * 1.8) {
+          E.burstT = 0.24; drainStamina(E, 7, 0.45);
+        }
         locomoteEntity(E, pl.tx - E.x, pl.ty - E.y, driveSpeed, dt);
       }
 
-      if (pl.mode === 'drive' && D(E, rimPt) < 76) {
+      if (pl.mode === 'drive' && D(E, rimPt) < 82 * df.finish) {
         E.plan = null;
         tryStartDunkOrLayup(E);
       } else if (Math.hypot(pl.tx - E.x, pl.ty - E.y) < 14) {
@@ -7677,53 +8438,74 @@ function cpuAgent(E, dt) {
       } else locomoteEntity(E, 0, 0, 0, dt);
       pl.c += dt;
       face(E, HX, HY);
-      if (pl.c > 0.60) {
-        const t = 0.85 + (R() + R() - 1) * 0.18;
-        E.plan = null;
+      // se o marcador colou enquanto armava e o companheiro está livre no 2v2 Pro, passa em vez de forçar
+      const pm = partnerOf(E);
+      if (df.passIQ >= 2 && pm && pl.c < 0.38 && D(E, oppFor(E)) < 42 && laneOpenness(E.x, E.y, pm.x, pm.y, E) > 0.5 && R() < dt * 2.2) {
+        E.plan = null; E.holdT = 0; passBall(E, pm, { speed: 1.12 }); return;
+      }
+      const gatherDur = cl(0.60 * (2 - df.sprint * 0.85), 0.42, 0.74);
+      if (pl.c > gatherDur) {
+        const t = GREEN_CENTER + (R() + R() - 1) * df.timeNoise;
+        E.plan = null; E.holdT = 0;
         shoot(E, t);
       }
     }
     return;
   }
-  E.plan = null;
+  E.plan = null; E.holdT = 0;
 
   // 2) DEFESA (o outro time esta com a bola)
   if (holdingTeam && holdingTeam !== myTeam) {
     const H = B.owner;
-    // 1v1: sempre no portador | 2v2: marca o seu homem, mas ajuda quando o portador esta perto
-    const onBall = !TM || H === M || D(E, H) < 85;
+    const pm = partnerOf(E);
+    // leitura com atraso de reação (df.react): no Fácil o bot reage atrasado aos cortes/dribles; no Pro lê em tempo real
+    const Hp = lagPos(H, df.react);
+    const hDistRim = D(H, rimPt);
+    const mateDef = pm ? D(pm, H) : 999;
+    // COBERTURA NO GARRAFÃO (2v2): se o portador bateu o marcador e está infiltrando, o outro defensor fecha o garrafão
+    const helpPaint = df.paintHelp > 0 && TM && H !== M && hDistRim < 165 && (mateDef > 52 || H.y < mateDef + HY);
+    const onBall = !TM || H === M || D(E, H) < 82 || helpPaint;
+
     if (onBall) {
-      const vx = HX - H.x, vy = HY - H.y, m = Math.hypot(vx, vy) || 1;
-      const cushion = H.dr ? 40 : 44;
-      const tx = H.x + (vx / m) * cushion;
-      const ty = H.y + (vy / m) * cushion;
+      const vx = HX - Hp.x, vy = HY - Hp.y, m = Math.hypot(vx, vy) || 1;
+      const cushion = helpPaint ? 32 : (H.dr ? 38 : 44);
+      const tx = Hp.x + (vx / m) * cushion;
+      const ty = Hp.y + (vy / m) * cushion;
       const distTarget = D(E, { x: tx, y: ty });
-      const defMaxSpeed = (H.cx > 0 || H.sd > 0 || H.bb > 0 || H.sb > 0 || H.spin > 0) ? 132 : 158;
-      // drible no tempo certo: o marcador perde o passo; bote errado: pés presos no início do erro
+      const defMaxSpeed = ((H.cx > 0 || H.sd > 0 || H.bb > 0 || H.sb > 0 || H.spin > 0) ? 134 : 160) * df.defSpd;
       const shookF = E.recover > 0 ? 0.2 : (E.shook > 0 ? 0.4 : 1);
-      locomoteEntity(E, tx - E.x, ty - E.y, Math.min(defMaxSpeed, distTarget * 5.2) * shookF, dt, (E.shook > 0 || E.recover > 0) ? 3 : 7.5);
+      locomoteEntity(E, tx - E.x, ty - E.y, Math.min(defMaxSpeed, distTarget * 5.4) * shookF, dt, ((E.shook > 0 || E.recover > 0) ? 3 : 8.0) * df.defSpd);
+      face(E, H.x, H.y);
     } else {
-      const vx = HX - M.x, vy = HY - M.y, m = Math.hypot(vx, vy) || 1;
-      const tx = M.x + (vx / m) * 50;
-      const ty = M.y + (vy / m) * 50;
-      locomoteEntity(E, tx - E.x, ty - E.y, Math.min(150, D(E, { x: tx, y: ty }) * 5), dt, 7.5);
+      // FORA DA BOLA (2v2): fecha a linha de passe (df.lane) + flutua para ajudar no garrafão (help side)
+      const Mp = lagPos(M, df.react * 0.7);
+      const vx = HX - Mp.x, vy = HY - Mp.y, m = Math.hypot(vx, vy) || 1;
+      let tx = Mp.x + (vx / m) * 48, ty = Mp.y + (vy / m) * 48;
+      if (df.lane > 0) {
+        // desloca em direção à linha de passe entre o portador H e o homem marcado M
+        const lx = lerp(Mp.x, H.x, 0.32), ly = lerp(Mp.y, H.y, 0.32);
+        tx = lerp(tx, lx, df.lane); ty = lerp(ty, ly, df.lane);
+        // se o portador entrou na zona intermediária, afunda um pouco para proteger o garrafão
+        if (hDistRim < 210) { tx = lerp(tx, HX, 0.18 * df.lane); ty = lerp(ty, HY + 48, 0.18 * df.lane); }
+      }
+      locomoteEntity(E, tx - E.x, ty - E.y, Math.min(155 * df.defSpd, D(E, { x: tx, y: ty }) * 5.2), dt, 8.0 * df.defSpd);
+      face(E, (M.x + H.x) * 0.5, (M.y + H.y) * 0.5);
     }
 
-    // CONTESTA: vê o portador armando o chute perto e sobe com a mão (reação ~0.25 s; perdeu o passo = não chega)
-    const gathering = H === P ? !!charge : (NET.live && H === A ? !!NET.rcharge : false);
-    if (gathering && D(E, H) < 60 && !(E.block > 0) && E.cd <= 0 && !(E.shook > 0) && !(E.recover > 0) && R() < dt * 4) {
-      E.block = 0.62; E.cd = 0.9; face(E, H.x, H.y);
+    // CONTESTA: vê o portador armando o chute (ou na fase inicial de soltura) e sobe com a mão
+    const gathering = (H === P && !!charge) || (NET.live && H === remoteEnt() && !!NET.rcharge) || (H.plan && H.plan.c !== null && H.plan.c > 0.15);
+    if (gathering && D(E, H) < 64 && !(E.block > 0) && E.cd <= 0 && !(E.shook > 0) && !(E.recover > 0) && R() < dt * 4.2 * df.contest) {
+      E.block = 0.62; E.cd = cl(0.95 / df.contest, 0.45, 1.2); face(E, H.x, H.y);
       return;
     }
-    if (D(E, H) < 40 && E.cd <= 0 && H.dunk <= 0 && !(E.shook > 0) && !(E.stealCD > 0)) {
-      E.cd = 0.68;
+    // BOTE (STEAL): frequência e precisão escalam com df.stealRate e df.stealSkill
+    if (D(E, H) < 42 && E.cd <= 0 && H.dunk <= 0 && !(E.shook > 0) && !(E.stealCD > 0)) {
+      E.cd = cl(0.68 / df.stealRate, 0.42, 1.15);
       const exhaustedVulnerability = H.exhausted ? 0.14 : 0;
-      // drible fora do ritmo deixa a bola exposta no meio do movimento
       const inMove = activeMove(H), moveChance = !inMove ? 0 : (H.mvGrade === 'late' ? 0.16 : H.mvGrade === 'perfect' ? 0.006 : 0.02);
-      const rawChance = (inMove ? moveChance : H.dr ? 0.08 : (H === P && charge) ? 0.32 : 0.26) * (isStill(H) ? 1.8 : 1);
-      const stealChance = Math.min(0.7, rawChance * stealExposure(H, E) * stealSituation(H, E)) + exhaustedVulnerability;
-      // errar custa caro: a CPU escolhe o momento e só às vezes arrisca um bote improvável
-      if (stealChance < 0.14 && R() > 0.15) { E.cd = 0.3; return; }
+      const rawChance = (inMove ? moveChance : H.dr ? 0.08 : gathering ? 0.32 : 0.26) * (isStill(H) ? 1.8 : 1);
+      const stealChance = Math.min(0.78, (rawChance * stealExposure(H, E) * stealSituation(H, E) + exhaustedVulnerability) * df.stealSkill);
+      if (stealChance < 0.14 && R() > 0.15 * df.stealRate) { E.cd = 0.32; return; }
       face(E, B.x, B.y); E.vx += E.fx * 80; E.vy += E.fy * 80;
       E.steal = STEAL_DUR;
       E.stealSide = stealSideFor(E, B.x, B.y);
@@ -7732,31 +8514,77 @@ function cpuAgent(E, dt) {
     return;
   }
 
-  // 3) TENTATIVA DE TOCO (arremesso adversario no ar)
+  // 3) DEFESA DE PASSE NO AR (2v2): nos níveis Médio/Pro o defensor ataca a linha da bola para interceptar
+  if (B.s === 'loose' && B.pass && B.pass.team !== myTeam) {
+    const ps = B.pass;
+    const sx = ps.tx - B.x, sy = ps.ty - B.y, sl = sx * sx + sy * sy || 1;
+    const u = cl(((E.x - B.x) * sx + (E.y - B.y) * sy) / sl, 0, 1);
+    const ix = B.x + sx * u, iy = B.y + sy * u;
+    if (Math.hypot(E.x - ix, E.y - iy) < 95 * (0.6 + df.lane)) {
+      locomoteEntity(E, ix - E.x, iy - E.y, 175 * df.defSpd, dt, 14);
+      // se for uma ponte aérea adversária subindo perto do aro, salta para cortar no alto
+      if (ps.oop && Math.hypot(E.x - ps.tx, E.y - ps.ty) < 52 && B.z > 50 && E.block <= 0 && E.cd <= 0 && R() < dt * 5 * df.block) {
+        E.block = 0.68; E.cd = 0.8; face(E, B.x, B.y);
+      }
+      return;
+    }
+  }
+
+  // 4) TENTATIVA DE TOCO (arremesso ou bandeja adversária no ar)
   const sh = (fl && fl.who && fl.who !== myTeam) ? fl.shooter : null;
-  if (sh && (fl.phase === 'windup' || fl.elapsed < 0.32) && D(E, sh) < 62 && E.cd <= 0) {
-    E.cd = 0.9;
-    E.block = 0.62;
-    if (R() < cl(0.18 * (1 + 0.8 * attrK(E, 'blk') - 0.3 * attrK(sh, 'three')), 0.05, 0.45)) executeBlock(E, sh);   // pivô dá mais toco
+  if (sh && (fl.phase === 'windup' || fl.elapsed < 0.34) && D(E, sh) < 66 * cl(df.block, 0.85, 1.2) && E.cd <= 0) {
+    E.cd = 0.85;
+    E.block = 0.65;
+    if (R() < cl(0.18 * df.block * (1 + 0.8 * attrK(E, 'blk') - 0.3 * attrK(sh, 'three')), 0.04, 0.58)) executeBlock(E, sh);
     return;
   }
 
-  // 4) ATAQUE SEM A BOLA (2v2): ocupa o perimetro do lado oposto ao portador
+  // 5) ATAQUE SEM A BOLA (2v2): espaçamento no perímetro + cortes em sprint para o garrafão (gatilho de Ponte Aérea!)
   if (holdingTeam === myTeam) {
     const hd = B.owner;
+    if (E._cutHd !== hd) { E._cutHd = hd; E.oopT = 1.1 + R() * 1.2; E.cutGo = false; E.spot = null; }
+    E.oopT = (E.oopT || 0) - dt;
+    // inicia um corte explosivo rumo ao aro quando há corredor livre (ou para dar opção de ponte aérea ao humano)
+    const cutRate = isHumanEnt(hd) ? Math.max(0.32, df.oopCut) : df.oopCut;
+    if (!E.cutGo && E.oopT <= 0 && !mustClear(hd) && D(E, rimPt) > 125 && !E.exhausted && E.stamina > 32) {
+      if (R() < cutRate && laneOpenness(E.x, E.y, HX, HY + 36, E) > 0.25) {
+        E.cutGo = true; E.cutT = 1.65;
+      } else {
+        E.oopT = 1.6 + R() * 1.4;
+      }
+    }
+    if (E.cutGo) {
+      E.cutT -= dt;
+      const tx = HX + (E.x < HX ? -16 : 16), ty = HY + 32;
+      locomoteEntity(E, tx - E.x, ty - E.y, 202 * cl(df.sprint, 0.95, 1.15), dt, 14);
+      const dRim = D(E, rimPt);
+      // durante o corte em sprint, abre a janela de recepção aérea para o portador passar (G ou IA)
+      if (!oopWin && !oopRun && dRim < 175 && dRim > 62) openAlleyOopWindow(E);
+      if (E.cutT <= 0 || dRim < 44) { E.cutGo = false; E.oopT = 2.4 + R() * 1.4; E.spot = null; }
+      return;
+    }
+    // espaçamento vivo no arco oposto ao portador
     const sx = hd.x < HX ? 1 : -1;
-    const a = sx > 0 ? Math.PI * 0.30 : Math.PI * 0.70;
-    const tx = HX + Math.cos(a) * (ARC + 20), ty = HY + Math.sin(a) * (ARC + 20);
-    locomoteEntity(E, tx - E.x, ty - E.y, Math.min(125, D(E, { x: tx, y: ty }) * 4), dt, 8);
+    if (!E.spot || Math.sign(E.spot.sx) !== sx) {
+      const a = sx > 0 ? Math.PI * (0.24 + R() * 0.14) : Math.PI * (0.62 + R() * 0.14);
+      E.spot = { sx, tx: HX + Math.cos(a) * (ARC + 22), ty: HY + Math.sin(a) * (ARC + 22) };
+    }
+    locomoteEntity(E, E.spot.tx - E.x, E.spot.ty - E.y, Math.min(138 * df.sprint, D(E, { x: E.spot.tx, y: E.spot.ty }) * 4.2), dt, 9);
     return;
   }
 
-  // 5) BOLA SOLTA: o mais proximo do time vai buscar (passe do proprio time nao e perseguido)
-  if (B.s === 'loose' && poss !== myTeam) {
-    const pm = partnerOf(E);
-    if (!pm || D(pm, B) >= D(E, B)) {
-      locomoteEntity(E, B.x - E.x, B.y - E.y, 162, dt);
+  // 6) BOLA SOLTA: vai buscar no ponto futuro da bola (ou recebe o próprio passe em movimento)
+  if (B.s === 'loose') {
+    if (B.pass && B.pass.to === E) {
+      locomoteEntity(E, B.pass.tx - E.x, B.pass.ty - E.y, 195 * df.sprint, dt, 14);
       return;
+    }
+    if (poss !== myTeam) {
+      const pm = partnerOf(E);
+      if (!pm || D(pm, B) >= D(E, B)) {
+        locomoteEntity(E, B.x + B.vx * 0.18 - E.x, B.y + B.vy * 0.18 - E.y, 170 * df.sprint, dt);
+        return;
+      }
     }
   }
   locomoteEntity(E, 0, 0, 0, dt);
@@ -7784,6 +8612,7 @@ function updatePhysicsStep(dt) {
 
   rimShake = Math.max(0, rimShake - dt * 3.5);
   clearStep();                                   // regra de limpar a bola
+  alleyOopStep(dt);                              // ponte aérea sincronizada (janela, salto e recepção no ar)
 
   for (const o of ents()) {
     const prevAir = o.dunk > 0 || o.layup > 0 || o.block > 0 || o.lock > 0;
@@ -7824,8 +8653,20 @@ function updatePhysicsStep(dt) {
     if (o.stealGoT > 0) o.stealGoT = Math.max(0, o.stealGoT - dt);
     if (o === P && o.defBuf > 0) { o.defBuf -= dt; if (o.cd <= 0) { o.defBuf = 0; tryDef(); } }
     o.lock = Math.max(0, o.lock - dt);
+    o.pump = Math.max(0, (o.pump || 0) - dt);
+    o.passAnim = Math.max(0, (o.passAnim || 0) - dt);
+    if (o.passPend) {
+      o.passPend.t -= dt;
+      if (B.s !== 'held' || B.owner !== o) o.passPend = null;
+      else if (o.passPend.t <= 0) {
+        const pd = o.passPend;
+        o.passPend = null;
+        launchPassBall(o, pd.to, pd.o);
+      }
+    }
     o.celeb = Math.max(0, o.celeb - dt);
     o.staminaRegenDelay = Math.max(0, o.staminaRegenDelay - dt);
+    if (o.oopFlub > 0) o.oopFlub = Math.max(0, o.oopFlub - dt);
     o.defStreakTimer = Math.max(0, o.defStreakTimer - dt);
     if (o.defStreakTimer <= 0) o.defStreak = 0;
 
@@ -7840,6 +8681,46 @@ function updatePhysicsStep(dt) {
   if (NET.live) remoteControlStep(dt);
 
   for (const o of ents()) {
+    // ENTERRADA (qualquer jogador: humano local, parceiro remoto no co-op, bots no Pro ou receptor de ponte aérea)
+    if (o.dunk > 0) {
+      const progress = 1 - o.dunk / 0.96;
+      const dx = HX - o.x, dy = HY - o.y + 8, dl = Math.hypot(dx, dy) || 1;
+      if (progress < 0.62 && dl > 8) {
+        const glideSp = Math.max(145, dl / Math.max(0.18, 0.60 - progress)) * (1 - progress * 0.25);
+        o.vx = (dx / dl) * Math.min(240, glideSp);
+        o.vy = (dy / dl) * Math.min(240, glideSp);
+        o.x = cl(o.x + o.vx * dt, 22, W - 22);
+        o.y = cl(o.y + o.vy * dt, 22, H - 22);
+      } else {
+        o.vx *= 0.85; o.vy *= 0.85;
+      }
+      face(o, HX, HY);
+
+      if (progress >= 0.58 && !o.dunkScored && B.s === 'held' && B.owner === o && Math.hypot(o.x - HX, o.y - HY) < 38) {
+        o.dunkScored = true;
+        o.oop = false;
+        rimShake = 0.55;
+        B.s = 'flight';
+        B.owner = null;
+        B.x = HX; B.y = HY; B.z = (RIM_Y - 0.12) / s;
+        B.vx = 0; B.vy = 10; B.vz = -165;
+        B.isGreen = true;
+        fl = {
+          who: teamOf(o),
+          shooter: o,
+          make: true,
+          three: false,
+          isGreen: true,
+          isDunk: true,
+          inPaint: true,
+          enteredRim: true,
+          scored: false,
+          rimHits: 0,
+          elapsed: 0,
+          T: 0.25
+        };
+      }
+    }
     if (o.layup > 0) {
       const progress = 1 - o.layup / 0.78;
       const dx = HX - o.x, dy = HY - o.y + 18, dl = Math.hypot(dx, dy) || 1;
@@ -7911,8 +8792,7 @@ function updatePhysicsStep(dt) {
 
   if (MODE !== 'train' && deadT <= 0) {
     for (const E of ents()) {
-      if (E === P) continue;
-      if (E === A && NET.live) continue; // no online, A e o convidado humano
+      if (isHumanEnt(E)) continue;                     // humanos (local + parceiro/adversário remoto) não rodam IA
       if (E.lock > 0 || E.layup > 0 || E.dunk > 0) continue;
       cpuAgent(E, dt);
     }
@@ -7926,9 +8806,12 @@ function updatePhysicsStep(dt) {
       const d = D(a, b);
       const minDist = 31 * (bodyOf(a).w + bodyOf(b).w) / 2;     // corpos mais largos ocupam mais espaço
       if (d < minDist && d > 0.001) {
-        // FORÇA: no choque, quem tem mais corpo empurra mais e é menos empurrado
+        // FORÇA: no choque, quem tem mais corpo empurra mais e é menos empurrado (jogador em pé de pivô não sai do eixo)
         const ma = Math.max(0.4, 1 + 0.45 * attrK(a, 'str')), mb = Math.max(0.4, 1 + 0.45 * attrK(b, 'str'));
-        const sa = 2 * mb / (ma + mb), sb = 2 * ma / (ma + mb);
+        const aPiv = B.s === 'held' && B.owner === a && a.deadDrib;
+        const bPiv = B.s === 'held' && B.owner === b && b.deadDrib;
+        const sa = aPiv ? 0 : (bPiv ? 1 : 2 * mb / (ma + mb));
+        const sb = bPiv ? 0 : (aPiv ? 1 : 2 * ma / (ma + mb));
         const overlap = (minDist - d) * 0.52;
         const ux = (a.x - b.x) / d, uy = (a.y - b.y) / d;
         a.x = cl(a.x + ux * overlap * sa, 22, W - 22);
@@ -7956,16 +8839,38 @@ function updatePhysicsStep(dt) {
   }
   for (const o of ents()) {
     o.v = damp(o.v, o.mv ? o.sp : 0, 14, dt);
+    // Impulso inercial de mudanca brusca de velocidade (cortes, frenagens, arranques) para a Active Ragdoll
+    const dvx = (o.vx - (o._prevVx || 0)), dvy = (o.vy - (o._prevVy || 0));
+    o._prevVx = o.vx; o._prevVy = o.vy;
+    const jerkMag = Math.hypot(dvx, dvy);
+    if (jerkMag > 8) {
+      const jScale = cl(jerkMag * 0.0016, 0, 0.22) / jerkMag;
+      o.ragImpulseX = cl((o.ragImpulseX || 0) - dvx * jScale, -0.65, 0.65);
+      o.ragImpulseY = cl((o.ragImpulseY || 0) - dvy * jScale, -0.65, 0.65);
+    }
+
     // Avanço de fase da passada (o.ph) 100% acoplado à distância real percorrida no solo (elimina patinação/moonwalk)
     if (o.v > 5 && o.dunk <= 0 && o.layup <= 0 && o.block <= 0) {
-      o.ph += dt * ((o.v * s) / 0.52);
+      o.ph += dt * ((o.v * s) / 0.50);
     }
     const prevBp = o.bp || 0;
-    const dribFreq = (o.cx > 0 || o.sd > 0 || o.bb > 0 || o.sb > 0) ? 1.9 : (o.dr ? 1.6 : 1.55 + (o.v / 228) * 1.85);
+    const inMove = (o.cx > 0 || o.sd > 0 || o.bb > 0 || o.sb > 0 || o.spin > 0);
+    const dribFreq = inMove ? 1.9 : (o.dr ? 1.6 : 1.55 + (o.v / 228) * 1.85);
     o.bp = prevBp + dt * dribFreq;
+    // Alinha a fase do quique (o.bp) ao final de qualquer drible especial para que a bola encaixe na mão sem corte!
+    if (inMove) {
+      const rem = Math.max(o.cx || 0, o.sd || 0, o.bb || 0, o.sb || 0, o.spin || 0);
+      if (rem < 0.14) {
+        const cycCur = o.bp % 1;
+        const targetCyc = 0.04; // topo da mão receptora iniciando novo ciclo suave
+        let diff = targetCyc - cycCur;
+        if (diff < -0.5) diff += 1; else if (diff > 0.5) diff -= 1;
+        o.bp += diff * cl(dt * 18, 0, 0.65);
+      }
+    }
     o.dribFreq = dribFreq;                       // usado para medir o timing do drible em segundos
 
-    if (!inStartMenu && B.s === 'held' && B.owner === o && o.lock <= 0 && o.dunk <= 0 && o.layup <= 0 && !charge && deadT <= 0) {
+    if (!inStartMenu && B.s === 'held' && B.owner === o && !o.deadDrib && !(o.pump > 0) && !(o.passAnim > 0) && o.lock <= 0 && o.dunk <= 0 && o.layup <= 0 && !charge && deadT <= 0) {
       const p1 = prevBp % 1;
       const p2 = o.bp % 1;
       if ((p1 < 0.54 && p2 >= 0.54) || (p2 < p1 && p1 < 0.54)) {
@@ -7973,10 +8878,11 @@ function updatePhysicsStep(dt) {
       }
     }
     resolvePlayerState(o, dt);
+    histPush(o);                                       // histórico curto para o atraso de reação defensiva dos bots
   }
 
   if (fl && fl.phase === 'windup' && B.s === 'held') {
-    fl.windup -= dt;
+    if (!(fl.shooter && fl.shooter.passHoldT > 0)) fl.windup -= dt;
     if (fl.windup <= 0) {
       launchBallisticShot(fl.shooter, fl.who, fl.make, fl.three, fl.isGreen, fl.aimErr || 0, fl.aimYaw || 0);
     }
@@ -8019,17 +8925,28 @@ function updatePhysicsStep(dt) {
 
     collideBallWithCourtWalls();
     handleRimAndBackboardPhysics(dt);
+    passTick(dt);                                      // hitbox varrida e interceptação de passes em voo
+    if (B.s !== 'loose') return;                       // interceptado: já virou posse do defensor
 
     if (B.z <= 4) {
       B.z = 4;
-      if (Math.abs(B.vz) > 22) {
-        if (typeof audio !== 'undefined') audio.playBounce(cl(Math.abs(B.vz) / 110, 0.35, 1.0));
-        B.vz = -B.vz * 0.72;
+      if (B.pass && B.pass.bounce && !B.pass.bounced) {
+        // Quique calculado do Passe Picado (Bounce Pass): preserva a impulsão horizontal e vertical para subir direto na mão do aliado
+        B.pass.bounced = true;
+        B.vx = B.pass.bvx;
+        B.vy = B.pass.bvy;
+        B.vz = B.pass.bvz;
+        if (typeof audio !== 'undefined') audio.playBounce(0.85);
+      } else {
+        if (Math.abs(B.vz) > 22) {
+          if (typeof audio !== 'undefined') audio.playBounce(cl(Math.abs(B.vz) / 110, 0.35, 1.0));
+          B.vz = -B.vz * 0.72;
+        }
+        else B.vz = 0;
+        const floorFriction = Math.pow(0.48, dt);
+        B.vx *= floorFriction;
+        B.vy *= floorFriction;
       }
-      else B.vz = 0;
-      const floorFriction = Math.pow(0.48, dt);
-      B.vx *= floorFriction;
-      B.vy *= floorFriction;
     }
 
     B.rotX += B.vy * dt * 0.08;
@@ -8058,13 +8975,21 @@ function updatePhysicsStep(dt) {
         if (d < bd) { bd = d; w = e; }
       }
       if (w) {
-        B.s = 'held';
-        B.owner = w;
-        B.passer = null; B.claim = null;
-        poss = teamOf(w);
-        onPossessionPickup(w);                     // troca de posse no meio da jogada: precisa limpar a bola
-        plan = null; w.plan = null;
-        updateScorebug();
+        if (w.oopFlub > 0) {                           // ponte aérea fora de tempo: bola escapa das mãos (fumble)
+          w.oopFlub = 0;
+          const a = R() * Math.PI * 2;
+          B.vx = Math.cos(a) * 135; B.vy = Math.sin(a) * 135; B.vz = 45;
+          B.nopick = 0.32; B.pass = null; B.passer = null; poss = null;
+          say('ESCAPOU DAS MÃOS!', 0.95, teamOf(w) === teamOf(P) ? 'bad' : 'good');
+        } else {
+          B.s = 'held';
+          B.owner = w;
+          B.pass = null; B.passer = null; B.claim = null;
+          poss = teamOf(w);
+          onPossessionPickup(w);                       // troca de posse no meio da jogada: precisa limpar a bola
+          plan = null; w.plan = null;
+          updateScorebug();
+        }
       }
     }
   } else if (B.s === 'dead') {
@@ -8092,9 +9017,10 @@ function updatePhysicsStep(dt) {
         over = true;
         const o = $('ov');
         o.style.display = 'flex';
-        $('ov-title').textContent = score.p > score.a ? 'VOCÊ VENCEU!' : (NET.live ? 'ADVERSÁRIO VENCEU!' : 'CPU VENCEU!');
+        const co = coopLive();
+        $('ov-title').textContent = score.p > score.a ? (co ? 'VITÓRIA DA DUPLA!' : 'VOCÊ VENCEU!') : (NET.live && !co ? 'ADVERSÁRIO VENCEU!' : 'CPU VENCEU!');
         $('ov-sub').textContent = 'PLACAR FINAL: ' + score.p + ' x ' + score.a;
-        if (NET.live) netSend({ t: 'over', win: score.a > score.p, me: score.a, op: score.p });
+        if (NET.live) netSend(co ? { t: 'over', win: score.p > score.a, me: score.p, op: score.a } : { t: 'over', win: score.a > score.p, me: score.a, op: score.p });
         if (typeof audio !== 'undefined') audio.checkScore(Math.max(score.p, score.a));
       } else {
         startPossession(nextP);
@@ -8225,10 +9151,14 @@ function syncBiomechanics(o, m, dt, t) {
   };
   const ak = o.ankle > 0 ? Object.assign({}, ankleChannels(o)) : null;   // reação de ankle breaker (canais anime.js)
 
-  const isGathering = hasB && me && charge;
-  const isShooting = o.lock > 0 && o.dunk <= 0 && o.layup <= 0 && o.block <= 0;
+  const chT = chargeOf(o);
+  const isPassing = (o.passAnim || 0) > 0;
+  const isPumping = (o.pump || 0) > 0;
+  const isDeadHold = hasB && !!o.deadDrib;
+  const isGathering = hasB && chT != null && !isPumping && !isPassing;
+  const isShooting = o.lock > 0 && o.dunk <= 0 && o.layup <= 0 && o.block <= 0 && !isPassing;
   const isCelebrating = o.celeb > 0 && o.lock <= 0.18;
-  const dr = o.dr && hasB;
+  const dr = o.dr && hasB && !isDeadHold;
 
   const sbp = o.sb > 0 ? 1 - o.sb / SB_DUR : 0;
   const sdp = o.sd > 0 ? 1 - o.sd / SD_DUR : 0;
@@ -8308,8 +9238,16 @@ function syncBiomechanics(o, m, dt, t) {
     jumpY = 0.78 * Math.sin(Math.PI * cl(bp * 1.12, 0, 1)) * jumpStaminaScale;
   } else if (o.cut > 0) {
     crouchOffset = -0.11 * Math.sin(Math.PI * cl(1 - o.cut / 0.40, 0, 1));
+  } else if (isPassing && o.passKind === 'bailout') {
+    const pp = 1 - o.passAnim / (o.passDur || 0.44);
+    jumpY = 0.58 * Math.sin(Math.PI * cl(pp, 0, 1)) * jumpStaminaScale;
+  } else if (isPumping) {
+    const fkp = 1 - o.pump / PUMP_DUR;
+    if (fkp < 0.35) crouchOffset = -0.13 * Math.sin((fkp / 0.35) * Math.PI);
+    else if (fkp < 0.78) jumpY = 0.07 * Math.sin(((fkp - 0.35) / 0.43) * Math.PI);
+    else crouchOffset = -0.06 * Math.sin(((fkp - 0.78) / 0.22) * Math.PI);
   } else if (isGathering) {
-    const gp = cl(charge.t / 0.85, 0, 1);
+    const gp = cl(chT / 0.85, 0, 1);
     if (gp < 0.45) crouchOffset = -0.17 * Math.sin((gp / 0.45) * Math.PI * 0.5);
     else {
       crouchOffset = -0.13 * (1 - (gp - 0.45) / 0.55);
@@ -8325,7 +9263,7 @@ function syncBiomechanics(o, m, dt, t) {
   const pivotDip = o.pivotT > 0 ? Math.sin(Math.PI * (1 - o.pivotT / 0.24)) * 0.10 : 0;
   const burstDip = o.burstT > 0 ? Math.sin(Math.PI * (1 - o.burstT / 0.26)) * 0.08 : 0;
 
-  const targetCrouch = (def || dr) ? 1.0 : (hasB ? 0.62 : 0.18);
+  const targetCrouch = (def || dr || isDeadHold) ? 1.0 : (hasB ? 0.62 : 0.18);
   o.cr = damp(o.cr, targetCrouch, 10, dt);
   const stanceDip = (o.dd > 0 ? 0.04 : 0) + o.cr * (dr ? 0.11 : (def ? 0.13 : 0.09)) + cxs * 0.13 + sds * 0.11 + bbs * 0.09 + legArr * 0.15 + stopDip + pivotDip + burstDip;
   // quique: na caminhada o quadril sobe no apoio (arco invertido); na corrida desce no apoio (mola) e sobe na fase de voo
@@ -8334,7 +9272,7 @@ function syncBiomechanics(o, m, dt, t) {
     : 0;
 
   // Fator de transição suave para quando o boneco está parado ou se movendo devagar (1 = parado, 0 = correndo)
-  const isActionLocked = isCelebrating || isGathering || isShooting || o.dunk > 0 || o.layup > 0 || o.block > 0 || o.steal > 0 || o.cut > 0;
+  const isActionLocked = isCelebrating || isGathering || isShooting || isPassing || isPumping || o.dunk > 0 || o.layup > 0 || o.block > 0 || o.steal > 0 || o.cut > 0;
   const idleFactor = isActionLocked ? 0 : cl(1 - amp * 1.35, 0, 1);
   const pSeed = me ? 0.0 : 2.15;
 
@@ -8482,10 +9420,59 @@ function syncBiomechanics(o, m, dt, t) {
       targetChestRx = lp < 0.30 ? 0.16 : -0.12;
       targetChestRy = -0.18 * Math.sin(lp * Math.PI);
     }
+  } else if (isPassing) {
+    // Rotação contextual do tronco conforme a variação do passe executado
+    const pp = 1 - o.passAnim / (o.passDur || 0.36);
+    const pSin = Math.sin(Math.PI * cl(pp, 0, 1));
+    const pExt = smoothstep(cl(pp / 0.36, 0, 1)) * (1 - 0.35 * smoothstep(cl((pp - 0.55) / 0.45, 0, 1)));
+    const pDir = o.passDir || 1;
+    if (o.passKind === 'behind') {
+      // Passe por Trás das Costas: torção plástica de ombros e inclinação lateral para envolver a bola atrás da cintura
+      targetPelvisRx = 0.14 * pSin;
+      targetChestRx = 0.22 * pSin;
+      targetPelvisRz = -pDir * 0.14 * pSin;
+      targetChestRy = pDir * 0.46 * pSin;
+    } else if (o.passKind === 'bounce') {
+      // Passe Picado: tronco avança e mergulha mais baixo acompanhando o empurrão em direção ao piso
+      targetPelvisRx = 0.20 * pExt;
+      targetChestRx = 0.30 * pExt;
+      targetChestRy = -pDir * 0.10 * pSin;
+    } else if (o.passKind === 'lob') {
+      // Passe por Cima (Overhead / Lob): leve arco dorsal no windup e chicote frontal na soltura alta
+      const arch = pp < 0.26 ? -0.14 * (pp / 0.26) : 0.16 * pExt;
+      targetPelvisRx = arch * 0.7;
+      targetChestRx = arch;
+      targetChestRy = 0;
+    } else if (o.passKind === 'bailout') {
+      // Bail Out Pass: aborta a subida vertical do arremesso no ar com torção rápida do tronco para o aliado
+      targetPelvisRx = 0.06 * pSin;
+      targetChestRx = 0.12 * pExt;
+      targetPelvisRz = -pDir * 0.12 * pSin;
+      targetChestRy = -pDir * 0.32 * pSin;
+    } else {
+      // Passe de Peito (Chest Pass): projeção firme do peito à frente na soltura
+      targetPelvisRx = 0.12 * pExt;
+      targetChestRx = 0.20 * pExt;
+      targetChestRy = 0;
+    }
+  } else if (isPumping) {
+    // Pump Fake: tronco sobe rápido simulando o início do jump shot e recolhe em postura protegida
+    const fkp = 1 - o.pump / PUMP_DUR;
+    const fkPeak = Math.sin(Math.PI * cl(fkp / 0.72, 0, 1));
+    targetPelvisRx = lerp(0.12, -0.06, fkPeak);
+    targetChestRx = lerp(0.16, -0.12, fkPeak);
+    targetChestRy = -0.14 * fkPeak;
   } else if (isGathering || isShooting) {
     targetPelvisRx = isGathering ? 0.10 : -0.08;
     targetChestRx = isGathering ? 0.08 : -0.12;
     targetChestRy = -0.16;
+  } else if (isDeadHold) {
+    // Bola Morta / Pé de Pivô: tronco flexionado protegendo a bola nas duas mãos com giro de ombros no pivô
+    const pivSw = Math.sin(t * 2.6 + pSeed);
+    targetPelvisRx = 0.12 + pivotDip * 0.45;
+    targetChestRx = 0.20 + pivotDip * 0.65;
+    targetPelvisRz = -turnVel * 0.12;
+    targetChestRy = turnVel * 0.28 + pivSw * 0.12;
   }
 
   const leanK = (o.dunk > 0 || o.layup > 0 || isCelebrating) ? 0 : cl((0.12 - m.position.y) / 0.1, 0, 1);   // inclinação de jogador profissional
@@ -8494,7 +9481,7 @@ function syncBiomechanics(o, m, dt, t) {
   pelvis.rotation.z = T('pelRz', targetPelvisRz, 15 + 20 * runK);
 
   // TORSO NATURAL (só em deslocamento/defesa/drible; não mexe em arremesso, bandeja, enterrada, comemoração)
-  const calmPose = !(o.dunk > 0 || o.layup > 0 || isShooting || isGathering || isCelebrating || o.block > 0 || o.steal > 0 || o.cut > 0);
+  const calmPose = !(o.dunk > 0 || o.layup > 0 || isShooting || isGathering || isPassing || isPumping || isCelebrating || o.block > 0 || o.steal > 0 || o.cut > 0);
   if (calmPose) {
     const gndT = cl((0.12 - m.position.y) / 0.1, 0, 1);
     targetChestRx += (0.16 + 0.06 * idleFactor) * gndT;                       // peito levemente à frente, ombros caídos
@@ -8576,14 +9563,23 @@ function syncBiomechanics(o, m, dt, t) {
       hipL_x = 0.30 * airSin;  kneeL_x = 0.32 * airSin + 0.15;
       ankleR_x = -0.20 * airSin; ankleL_x = 0.38 * airSin;
     }
-  } else if (isShooting || o.block > 0) {
+  } else if (isShooting || o.block > 0 || (isPassing && o.passKind === 'bailout')) {
     const airFactor = jumpY > 0.05 ? cl(jumpY / 0.45, 0, 1) : 0;
-    hipL_x = lerp(hipL_x, -0.12, airFactor);
-    hipR_x = lerp(hipR_x, -0.18, airFactor);
-    kneeL_x = lerp(kneeL_x, 0.22, airFactor);
-    kneeR_x = lerp(kneeR_x, 0.28, airFactor);
+    hipL_x = lerp(hipL_x, isPassing ? -0.26 : -0.12, airFactor);
+    hipR_x = lerp(hipR_x, isPassing ? 0.14 : -0.18, airFactor);
+    hipL_z = lerp(hipL_z, isPassing ? 0.16 : hipL_z, airFactor);
+    hipR_z = lerp(hipR_z, isPassing ? -0.16 : hipR_z, airFactor);
+    kneeL_x = lerp(kneeL_x, isPassing ? 0.58 : 0.22, airFactor);
+    kneeR_x = lerp(kneeR_x, isPassing ? 0.44 : 0.28, airFactor);
     ankleL_x = 0.32 * airFactor;
     ankleR_x = 0.32 * airFactor;
+  } else if (isPassing && amp < 0.35) {
+    // Passada de apoio à frente (step-into-pass) nos passes de peito, picado e por cima quando parado/lento
+    const pp = 1 - o.passAnim / (o.passDur || 0.36);
+    const stepK = Math.sin(Math.PI * cl(pp, 0, 1)) * (o.passKind === 'bounce' ? 1.25 : 0.85);
+    hipR_x -= 0.42 * stepK; kneeR_x += 0.52 * stepK;
+    hipL_x += 0.24 * stepK; kneeL_x += 0.22 * stepK;
+    hipL_z += 0.08 * stepK; hipR_z -= 0.08 * stepK;
   } else if (isCelebrating) {
     // Base aberta (wide stance) com bounce nos joelhos no ritmo do trap
     const kneeBounce = Math.abs(Math.sin(t * 9.5)) * 0.24;
@@ -8809,7 +9805,17 @@ function syncBiomechanics(o, m, dt, t) {
 
   if (o.dunk > 0) {
     const dp = 1 - o.dunk / 0.96;
-    if (DUNKBASE[o.dunkType | 0] === 1) {
+    if (o.oop && !hasB) {
+      // PONTE AÉREA (VOO ANTES DA RECEPÇÃO): braços estendidos no alto buscando o passe aéreo
+      const reach = smoothstep(cl(dp / 0.36, 0, 1));
+      aR_x = lerp(-1.10, -2.36, reach); aL_x = lerp(-1.10, -2.30, reach);
+      eR_x = lerp(0.95, 0.34, reach);   eL_x = lerp(0.95, 0.38, reach);
+      aR_z = lerp(0.14, 0.08, reach);   aL_z = lerp(-0.14, -0.08, reach);
+      aR_y = -0.12;                     aL_y = 0.12;
+      wR_x = -0.14;                     wL_x = -0.14;
+      wR_y = 0.30;                      wL_y = -0.30;
+      handMode = 'dunk_cup';
+    } else if (DUNKBASE[o.dunkType | 0] === 1) {
       // TWO-HAND POWER DUNK: palmas voltadas uma para a outra segurando a bola com naturalidade acima da cabeça e flexão palmar limpa na cravada
       if (dp < 0.54) {
         const cock = smoothstep(dp / 0.54);
@@ -9088,9 +10094,113 @@ function syncBiomechanics(o, m, dt, t) {
       aR_x = aL_x = -1.15 - 0.7 * reach; eR_x = eL_x = 0.55 - 0.35 * reach;
       aR_z = -0.16; aL_z = 0.16; wR_y = 0.2; wL_y = -0.2;
     }
+  } else if (isPassing) {
+    // ANIMAÇÕES CONTEXTUAIS DE PASSE (transição suave do gather/drible -> release -> follow-through):
+    const pp = 1 - o.passAnim / (o.passDur || 0.36);
+    const wind = smoothstep(cl(pp / 0.20, 0, 1));
+    const rel = smoothstep(cl((pp - 0.14) / 0.34, 0, 1));
+    const settle = smoothstep(cl((pp - 0.68) / 0.32, 0, 1));
+    const ext = rel * (1 - 0.45 * settle);
+    const pDir = o.passDir || 1;
+
+    if (o.passKind === 'behind') {
+      // PASSE POR TRÁS DAS COSTAS (Behind-the-Back): braço dominante envolve a região lombar em chicote rápido enquanto o outro equilibra
+      const wrap = Math.sin(Math.PI * cl(pp / 0.85, 0, 1));
+      const snap = smoothstep(cl((pp - 0.18) / 0.32, 0, 1));
+      if (pDir > 0) {
+        aR_x = lerp(-0.35, 0.52, wrap) - 0.22 * snap;
+        eR_x = lerp(1.05, 0.68, wrap) + 0.18 * snap;
+        aR_z = lerp(-0.18, 0.38, wrap);
+        aR_y = lerp(-0.10, 0.48, wrap);
+        wR_x = -0.46 * snap; wR_y = 0.42; wR_z = 0.28 * snap;
+        aL_x = -0.52 - 0.22 * wrap; eL_x = 0.92; aL_z = 0.44 + 0.18 * wrap; wL_x = -0.15; wL_y = -0.28;
+      } else {
+        aL_x = lerp(-0.35, 0.52, wrap) - 0.22 * snap;
+        eL_x = lerp(1.05, 0.68, wrap) + 0.18 * snap;
+        aL_z = lerp(0.18, -0.38, wrap);
+        aL_y = lerp(0.10, -0.48, wrap);
+        wL_x = -0.46 * snap; wL_y = -0.42; wL_z = -0.28 * snap;
+        aR_x = -0.52 - 0.22 * wrap; eR_x = 0.92; aR_z = -0.44 - 0.18 * wrap; wR_x = -0.15; wR_y = 0.28;
+      }
+      handMode = pp > 0.22 ? 'shoot_follow' : 'dribble';
+    } else if (o.passKind === 'bounce') {
+      // PASSE PICADO (Bounce Pass): recolhe na linha da cintura/quadril e empurra em diagonal firme para o chão
+      aR_x = lerp(-0.62 * wind, -1.08, ext);
+      aL_x = lerp(-0.58 * wind, -1.02, ext);
+      eR_x = lerp(1.28, 0.20, ext);
+      eL_x = lerp(1.24, 0.26, ext);
+      aR_z = lerp(-0.20, -0.28, ext);
+      aL_z = lerp(0.20, 0.28, ext);
+      aR_y = -0.10; aL_y = 0.10;
+      wR_x = lerp(0.12, -0.54, ext);
+      wL_x = lerp(0.12, -0.50, ext);
+      wR_y = lerp(0.24, -0.22, ext);
+      wL_y = lerp(-0.24, 0.22, ext);
+      handMode = pp > 0.20 ? 'shoot_follow' : 'ball_cup';
+    } else if (o.passKind === 'lob') {
+      // PASSE POR CIMA (Overhead / Lob Pass): braços erguem a bola acima da testa e lançam em arco alto com quebra de punho
+      aR_x = lerp(-2.18 * wind, -2.02, ext);
+      aL_x = lerp(-2.14 * wind, -1.98, ext);
+      eR_x = lerp(1.18, 0.16, ext);
+      eL_x = lerp(1.16, 0.20, ext);
+      aR_z = lerp(-0.14, -0.22, ext);
+      aL_z = lerp(0.14, 0.22, ext);
+      aR_y = -0.08; aL_y = 0.08;
+      wR_x = lerp(0.22, -0.58, ext);
+      wL_x = lerp(0.22, -0.58, ext);
+      wR_y = lerp(0.18, -0.14, ext);
+      wL_y = lerp(-0.18, 0.14, ext);
+      handMode = pp > 0.20 ? 'shoot_follow' : 'ball_cup';
+    } else if (o.passKind === 'bailout') {
+      // BAIL OUT PASS (Jump Pass em suspensão): aborta a subida do chute no ar e chicoteia o passe para o aliado
+      aR_x = lerp(-1.68, -1.52, ext);
+      aL_x = lerp(-1.58, -1.36, ext);
+      eR_x = lerp(1.24, 0.14, ext);
+      eL_x = lerp(1.18, 0.32, ext);
+      aR_z = lerp(0.08, -0.34 * pDir, ext);
+      aL_z = lerp(-0.12, 0.26, ext);
+      aR_y = -0.16 * pDir; aL_y = 0.14;
+      wR_x = lerp(0.20, -0.62, ext);
+      wL_x = lerp(-0.08, -0.42, ext);
+      wR_y = lerp(0.26, -0.20, ext);
+      wL_y = lerp(-0.36, 0.16, ext);
+      handMode = pp > 0.12 ? 'shoot_follow' : 'ball_cup';
+    } else {
+      // PASSE DE PEITO (Chest Pass): recolhe simétrico no peito (cotovelos abertos) e estende explosivo com flick dos polegares para baixo
+      aR_x = lerp(-0.92 * wind, -1.48, ext);
+      aL_x = lerp(-0.92 * wind, -1.48, ext);
+      eR_x = lerp(1.36, 0.16, ext);
+      eL_x = lerp(1.36, 0.16, ext);
+      aR_z = lerp(-0.28, -0.18, ext);
+      aL_z = lerp(0.28, 0.18, ext);
+      aR_y = -0.12; aL_y = 0.12;
+      wR_x = lerp(0.16, -0.52, ext);
+      wL_x = lerp(0.16, -0.52, ext);
+      wR_y = lerp(0.26, -0.34, ext);
+      wL_y = lerp(-0.26, 0.34, ext);
+      handMode = pp > 0.20 ? 'shoot_follow' : 'ball_cup';
+    }
+  } else if (isPumping) {
+    // PUMP FAKE: sobe rápido a bola com as duas mãos ao bolso de arremesso/testa fingindo o chute e puxa de volta ao peito/quadril
+    const fkp = 1 - o.pump / PUMP_DUR;
+    const up = Math.sin(Math.PI * cl(fkp / 0.72, 0, 1));
+    const tuck = smoothstep(cl((fkp - 0.55) / 0.45, 0, 1));
+    aR_x = lerp(lerp(-0.78, -1.62, up), -0.84, tuck);
+    eR_x = lerp(lerp(1.18, 1.28, up), 1.32, tuck);
+    aR_z = lerp(lerp(-0.18, 0.08, up), -0.30, tuck);
+    aR_y = lerp(-0.08, -0.14, up);
+    wR_x = lerp(-0.06, 0.22, up);
+    wR_y = 0.28;
+    aL_x = lerp(lerp(-0.76, -1.54, up), -0.82, tuck);
+    eL_x = lerp(lerp(1.14, 1.22, up), 1.30, tuck);
+    aL_z = lerp(lerp(0.18, -0.14, up), 0.30, tuck);
+    aL_y = lerp(0.08, 0.18, up);
+    wL_x = -0.10;
+    wL_y = lerp(-0.28, -0.52, up);
+    handMode = 'ball_cup';
   } else if (isGathering) {
     // SHOOTING POCKET REALISTA: mão direita armada sob a bola (punho em dorsiflexão) e mão esquerda apoiada na lateral como guia
-    const gp = smoothstep(cl(charge.t / 0.85, 0, 1));
+    const gp = smoothstep(cl(chT / 0.85, 0, 1));
     aR_x = lerp(-0.82, -1.64, gp);
     eR_x = lerp(1.16, 1.26, gp);
     aR_z = lerp(-0.08, 0.10, gp);
@@ -9236,6 +10346,21 @@ function syncBiomechanics(o, m, dt, t) {
       if (oldR) { aR_x = oAx; aR_z = -oAz; eR_x = oE; wR_x = oWx; wR_y = 0.26; aL_x = nAx; aL_z = nAz; eL_x = nE; wL_x = nWx; wL_y = -0.30; }
       else { aL_x = oAx; aL_z = oAz; eL_x = oE; wL_x = oWx; wL_y = -0.26; aR_x = nAx; aR_z = -nAz; eR_x = nE; wR_x = nWx; wR_y = 0.30; }
       handMode = pocket > 0.3 ? 'ball_cup' : 'dribble';
+    } else if (isDeadHold) {
+      // BOLA MORTA / PÉ DE PIVÔ (TRIPLE THREAT / PIVOT PROTECT):
+      // Bola segura firme com as duas mãos, cotovelos abertos protegendo contra bote e varrida lateral acompanhando o giro de pivô
+      const rip = Math.sin(t * 2.8 + pSeed) * 0.16 + cl(turnVel * 0.35, -0.28, 0.28);
+      aR_x = -0.82 + rip * 0.18;
+      aL_x = -0.82 - rip * 0.18;
+      eR_x = 1.30;
+      eL_x = 1.30;
+      aR_z = -0.32 + rip * 0.22;
+      aL_z = 0.32 + rip * 0.22;
+      aR_y = -0.14;
+      aL_y = 0.14;
+      wR_x = -0.08; wL_x = -0.08;
+      wR_y = 0.32;  wL_y = -0.32;
+      handMode = 'ball_cup';
     } else if (o.spin > 0) {
       // SPIN MOVE: puxa a bola colada à cintura durante o giro de 360° e protege com o braço oposto
       const spWave = Math.sin(Math.PI * spp);
@@ -9526,7 +10651,7 @@ function syncBallWithHandsAndFloor(o, m, dt) {
 
   m.updateMatrixWorld(true);
 
-  const isGathering = (o === P && charge);
+  const isGathering = chargeOf(o) != null;
   const isShooting = o.lock > 0 && o.dunk <= 0 && o.layup <= 0;
 
   const domWrist = o.hand > 0 ? m.handR : m.handL;
@@ -9573,10 +10698,26 @@ function syncBallWithHandsAndFloor(o, m, dt) {
     return;
   }
 
-  if (isGathering || isShooting) {
+  if (isGathering || isShooting || (o.pump > 0)) {
     m.handR.palmAnchor.getWorldPosition(_v1);
     m.handL.palmAnchor.getWorldPosition(_v2);
-    _v3.lerpVectors(_v1, _v2, 0.28);
+    _v3.lerpVectors(_v1, _v2, o.pump > 0 ? 0.44 : 0.28);
+    mB.position.copy(_v3);
+    B.x = _v3.x / s; B.y = _v3.z / s; B.z = Math.max(0, (_v3.y - 0.12) / s);
+    return;
+  }
+
+  // Transição suave entre o ciclo de drible e a soltura do passe (windup de passPend) ou estado de Bola Morta (Pé de Pivô)
+  if ((o.passAnim > 0) || o.deadDrib) {
+    m.handR.palmAnchor.getWorldPosition(_v1);
+    m.handL.palmAnchor.getWorldPosition(_v2);
+    if (o.passAnim > 0 && o.passKind === 'behind') {
+      const pDir = o.passDir || 1;
+      _v3.lerpVectors(_v1, _v2, pDir > 0 ? 0.12 : 0.88);
+    } else {
+      _v3.lerpVectors(_v1, _v2, 0.5);
+    }
+    limitBallStep(dt);
     mB.position.copy(_v3);
     B.x = _v3.x / s; B.y = _v3.z / s; B.z = Math.max(0, (_v3.y - 0.12) / s);
     return;
@@ -10094,6 +11235,35 @@ function render(dt, t) {
     const screenX = (_v3.x * 0.5 + 0.5) * smCanvas.width;
     const screenY = (-_v3.y * 0.5 + 0.5) * smCanvas.height;
     drawVerticalShotMeter(screenX, screenY, charge.t / CHARGE_MAX);
+  }
+  if (oopWin && oopWin.t > 0 && oopWin.recv && !inStartMenu) {
+    const r = oopWin.recv;
+    _v3.set(r.x * s, 2.28, r.y * s).project(cam);
+    if (_v3.z < 1) {
+      const sx = (_v3.x * 0.5 + 0.5) * smCanvas.width;
+      const sy = (-_v3.y * 0.5 + 0.5) * smCanvas.height;
+      const pct = cl(oopWin.t / OOP_WIN, 0, 1);
+      const isPasser = B.s === 'held' && B.owner === P && teamOf(r) === teamOf(P);
+      const pk = (typeof GSET !== 'undefined' && GSET.keys && GSET.keys.pass) ? GSET.keys.pass.replace(/^Key/, '') : 'G';
+      const txt = isPasser ? ('PONTE AÉREA [' + pk + ']') : (r === P ? 'JANELA AÉREA!' : 'PONTE AÉREA!');
+      smCtx.save();
+      smCtx.font = '800 12px "Segoe UI", Figtree, sans-serif';
+      smCtx.textAlign = 'center'; smCtx.textBaseline = 'middle';
+      const tw = Math.max(96, smCtx.measureText(txt).width + 20);
+      const bh = 26, bx = sx - tw / 2, by = sy - bh / 2;
+      smCtx.fillStyle = 'rgba(10, 14, 22, 0.88)';
+      smCtx.strokeStyle = isPasser ? '#22c55e' : '#38bdf8';
+      smCtx.lineWidth = 2;
+      smCtx.shadowColor = isPasser ? '#22c55e' : '#38bdf8';
+      smCtx.shadowBlur = 12;
+      smCtx.beginPath(); smCtx.roundRect(bx, by, tw, bh, 7); smCtx.fill(); smCtx.stroke();
+      smCtx.shadowBlur = 0;
+      smCtx.fillStyle = isPasser ? '#22c55e' : '#38bdf8';
+      smCtx.fillRect(bx + 4, by + bh - 5, (tw - 8) * pct, 3);
+      smCtx.fillStyle = '#ffffff';
+      smCtx.fillText(txt, sx, by + bh / 2 - 2);
+      smCtx.restore();
+    }
   }
 
   updateSunFocus(P.x * s, P.y * s);
@@ -11841,6 +13011,8 @@ requestAnimationFrame(loop);
       )),
     sec('Geral',
       grid(
+        seg('Dificuldade dos Bots (IA)', [['easy', 'Fácil'], ['medium', 'Médio'], ['hard', 'Difícil / Pro']], () => DIFF, v => setDiff(v),
+          'Escala reação defensiva, precisão de arremesso/infiltração e inteligência tática 2v2 dos Bots.'),
         modeRow,
         slider({ label: 'Sensibilidade do toque', min: 0.5, max: 2, step: 0.05, unit: '×', get: () => M.cfg.sens, set: v => M.setSens(v), hint: 'Multiplica a sensibilidade X/Y da câmera ao arrastar o dedo.', cls: 'cfg-mob-only' }),
         slider({ label: 'Tamanho dos botões', min: 0.8, max: 1.3, step: 0.05, unit: '×', get: () => M.cfg.size, set: v => M.setSize(v), hint: 'Botões de toque e joystick.', cls: 'cfg-mob-only' }),
