@@ -7403,7 +7403,8 @@ const MOVE_COST = { cx: 8, bb: 9, sb: 10, sd: 8, spin: 11, io: 9, hesi: 7, burst
 const MOVE_OPEN = { cx: 0.9, bb: 0.9, sb: 1.45, sd: 0.85, spin: 1.0, io: 0.8, hesi: 0.9, burst: 1.1, sg: 1.1 };
 const MOVE_NAME = { cx: 'Crossover', bb: 'Entre as pernas', sb: 'Step-back', sd: 'Drible lateral', spin: 'Giro',
   io: 'In-and-out', hesi: 'Hesitação', burst: 'Arranque', sg: 'Shammgod' };
-const MOVE_RATE = { hesi: 0.9, burst: 1.1, sg: 0.9 };              // duração relativa ao drible base
+const MOVE_RATE = { hesi: 0.9, burst: 1.1 / 0.8, sg: 0.9 };        // duração relativa ao drible base (burst 20% mais curto)
+const BURST_COOLDOWN = 1.0;                                       // s — recarga exclusiva do arranque
 // cor de cada drible: rastro da bola, anel no chão e nome no HUD (cada cor = um drible)
 const MOVE_COLOR = { cx: '#2bb6ff', bb: '#a78bfa', sb: '#f5b94a', sd: '#dfe6f0', spin: '#2dd4bf',
   io: '#ff4fd8', hesi: '#b7ff3c', burst: '#ff2e3c', sg: '#ffd23f' };   // arranque em vermelho: laranja sumia no piso
@@ -7591,6 +7592,7 @@ function cancelMove(o, kind) {
 
 // Inicia um drible com a nota dada. Devolve false se faltar fôlego.
 function startDribbleMove(o, kind, dir, grade) {
+  if (kind === 'burst' && (o.burstCd || 0) > 0) return false;   // arranque em recarga
   const active = activeMove(o);
   const chained = !!active || (o.comboT || 0) > 0;
   const repeat = chained && o.lastMove === kind;
@@ -7598,10 +7600,11 @@ function startDribbleMove(o, kind, dir, grade) {
   const combo = chained && grade !== 'late' ? Math.min((o.combo || 1) + 1, 9) : 1;
   const chain = Math.min(combo - 1, 3);
   const g = DRIB_GRADE[grade];
-  const cost = MOVE_COST[kind] * g.cost * (1 - 0.1 * chain) * (repeat ? 1.35 : 1);
+  const cost = MOVE_COST[kind] * g.cost * (1 - 0.1 * chain) * (repeat ? (kind === 'burst' ? 3.2 + 0.6 * chain : 1.35) : 1); // combo só de arranque gasta bem mais estamina
   if (!canExecuteDribble(o, cost)) return false;
   if (active) cancelMove(o, active);
   drainStamina(o, cost, 0.5);
+  if (kind === 'burst') o.burstCd = BURST_COOLDOWN;
 
   const tk = MOVE_TIMER_KEY[kind] || kind;           // timer/animação base do drible
   o.prevHand = o.hand;
@@ -7656,7 +7659,7 @@ function dribbleStep(o, dt, endedNow) {
   if (mvNow) { o.sinceMove = 0; if (mvNow === 'sb') o.sinceSB = 0; }
   else { o.sinceMove = (o.sinceMove ?? 9) + dt; o.sinceSB = (o.sinceSB ?? 9) + dt; }
   // bote: cooldown do erro, recuperação, janelas do ankle breaker e a queda
-  for (const k of ['stealCD', 'recover', 'whiffWin', 'cutWin', 'ankle']) if (o[k] > 0) o[k] = Math.max(0, o[k] - dt);
+  for (const k of ['stealCD', 'recover', 'whiffWin', 'cutWin', 'ankle', 'burstCd']) if (o[k] > 0) o[k] = Math.max(0, o[k] - dt);
   if (o.comboT > 0) { o.comboT = Math.max(0, o.comboT - dt); if (o.comboT <= 0 && !activeMove(o)) o.combo = 0; }
   if (o.shook > 0) o.shook = Math.max(0, o.shook - dt);
   const bf = o.mvBuf;
